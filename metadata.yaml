@@ -20,7 +20,7 @@ desc: |
   群管动作（禁言、踢人、改名片）由 astrbot_plugin_group_agent 负责，本插件不做。
 version: 0.2.0
 author: w1ndys
-repo: https://github.com/w1ndys/w1ndys-astrbot-plugins
+repo: https://github.com/w1ndys/astrbot_plugin_w1ndys_rules
 astrbot_version: ">=4.13"
 support_platforms:
   - aiocqhttp
