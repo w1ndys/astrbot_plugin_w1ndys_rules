@@ -1,0 +1,22 @@
+name: astrbot_plugin_w1ndys_rules
+display_name: 群规
+short_desc: 关键词、违禁词、欢迎语、黑名单，全部走代码匹配，不经过模型
+desc: |
+  AstrBot 插件：群里的固定规则。命中判断全部由代码完成，不调用大模型，
+  所以不消耗 Token，也不会因为模型发挥而回错内容。
+
+  目标平台是 NapCat / Lagrange / LLOneBot 等 OneBot v11 协议端。
+
+  当前版本只包含关键词回复：
+  - 群员发一条消息，内容与某个关键词完全相同，机器人就回预设内容；
+  - 不 @ 机器人、不唤醒，照样回复，也不会触发模型；
+  - 每个群的开关默认关闭，需要管理员用 /kr 开 打开。
+
+  后续版本会在同一个包内加入违禁词、欢迎语、黑名单等功能。
+  群管动作（禁言、踢人、改名片）由 astrbot_plugin_group_agent 负责，本插件不做。
+version: 0.1.0
+author: w1ndys
+repo: https://github.com/w1ndys/w1ndys-astrbot-plugins
+astrbot_version: ">=4.13"
+support_platforms:
+  - aiocqhttp
