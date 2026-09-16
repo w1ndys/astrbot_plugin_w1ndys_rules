@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light dark;
+  font-family: sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--background, #111);
+  color: var(--foreground, #eee);
+}
+
+.page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.hint {
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+textarea,
+button,
+.output {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+textarea,
+.output {
+  padding: 0.75rem;
+  border: 1px solid #555;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+}
+
+button {
+  margin: 0.75rem 0;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.output {
+  min-height: 6rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

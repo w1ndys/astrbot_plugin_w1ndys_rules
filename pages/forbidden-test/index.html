@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>违禁词测试</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <h1>违禁词测试</h1>
+      <p class="hint">
+        走和正式路径一样的触发词门槛，再问当前 AstrBot 提供商是不是违禁。
+        只在 WebUI 看结果，不会发到 QQ，也不会撤回、禁言或发飞书。
+      </p>
+      <label for="text">待测文本</label>
+      <textarea id="text" rows="6" placeholder="把群里可能发出的那句话贴这里"></textarea>
+      <button id="run" type="button">测试</button>
+      <pre id="output" class="output">还没测。</pre>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

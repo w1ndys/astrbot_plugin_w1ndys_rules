@@ -33,6 +33,7 @@
     "description": "飞书 webhook",
     "type": "string",
     "default": "",
+    "secret": true,
     "hint": "飞书自定义机器人 webhook，只填在本机 WebUI，不要写进代码仓。留空则发不出飞书通知。"
   }
 }

@@ -1,7 +1,8 @@
-# 入口层：向 AstrBot 注册群消息监听，以及给模型用的关键词管理工具。
+# 入口层：向 AstrBot 注册群消息监听、关键词管理工具，以及违禁词 WebUI 测试页。
 #
 # 群员命中关键词、管理员开/关/批量，都由代码直接回复，不经过模型；回复完拦住事件，
 # 模型不会再在后面补一句。开、关、批量不走指令过滤器，所以不需要唤醒前缀。
+# 违禁词测试只走插件 Pages，不经 QQ，也不撤回、禁言、发飞书。
 #
 # 匹配用的是 AstrBot 解析出来的纯文本 event.message_str，不是 OneBot 原始
 # raw_message。旧机器人比的是 raw_message，带 @ 或图片的消息会带上 CQ 码，
@@ -21,10 +22,15 @@ from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.admin_command import handle_admin_command
+from .business.forbidden_judge import (
+    complete_yes_no,
+    plan_forbidden_test,
+    test_result_payload,
+)
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
 from .data.keyword_store import KeywordStore
-from .entity.constants import DB_FILE_NAME
+from .entity.constants import DB_FILE_NAME, PLUGIN_NAME
 
 
 class RulesPlugin(Star):
@@ -37,7 +43,59 @@ class RulesPlugin(Star):
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
         self.switches = GroupSwitchStore(db_path)
+        self._register_forbidden_page()
         logger.info("[rules] 关键词规则已载入内存：%s", db_path)
+
+    def _register_forbidden_page(self) -> None:
+        """注册违禁词 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/forbidden/test",
+            self.page_forbidden_test,
+            ["POST"],
+            "违禁词测试",
+        )
+
+    async def page_forbidden_test(self):
+        """WebUI 测试：触发词门槛 + 当前提供商判断。不发 QQ，不处置。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出 text
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        text = str(payload.get("text") or "")
+        plan = plan_forbidden_test(self.config, text)
+        # 没到模型这一步，直接把原因回给页面
+        if plan.status != "ready":
+            return json_response(test_result_payload(plan, "skip"))
+        provider = await self._using_provider()
+        # 没配对话模型就测不了
+        if provider is None:
+            return json_response(
+                {
+                    "status": "fail",
+                    "trigger": plan.trigger,
+                    "message": "当前没有可用的对话提供商。",
+                }
+            )
+        verdict = await complete_yes_no(provider, plan.system, plan.user)
+        return json_response(test_result_payload(plan, verdict))
+
+    async def _using_provider(self):
+        """取当前对话提供商。测试页没有群会话，不传 umo。"""
+        getter = getattr(self.context, "get_using_provider_async", None)
+        # 老版本没有异步接口
+        if not callable(getter):
+            return None
+        try:
+            return await getter()
+        except Exception:
+            # 提供商没配好时测试页报失败，不要把插件打挂
+            return None
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
