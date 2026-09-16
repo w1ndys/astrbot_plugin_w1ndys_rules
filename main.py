@@ -21,6 +21,7 @@ from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
+from .business.keyword_batch import import_rules
 from .business.keyword_reply import pick_reply
 from .business.switch_command import run_switch_command
 from .data.keyword_store import KeywordStore
@@ -49,7 +50,7 @@ class RulesPlugin(Star):
         if not text:
             return
         # 斜杠开头的是 AstrBot 默认唤醒前缀下的指令，交给指令处理器，不拿来当关键词匹配。
-        # 自定义唤醒前缀（如「卷卷」）下指令会变成「kr 开」，这里拦不住，
+        # 自定义唤醒前缀（如「卷卷」）下指令会变成「关键词 开」，这里拦不住，
         # 只有关键词恰好等于某个指令串时才会撞上。
         if text.startswith("/"):
             return
@@ -61,12 +62,12 @@ class RulesPlugin(Star):
         # 回完拦住后续 LLM，避免模型又接一句
         _stop_llm(event)
 
-    @filter.command_group("kr")
-    def kr(self):
-        """关键词回复开关：kr 开、kr 关。指令组本身不做事，只用来挂子指令。"""
+    @filter.command_group("关键词")
+    def keyword_cmd(self):
+        """关键词回复指令组：关键词 开、关键词 关、关键词 批量。指令组本身不做事，只用来挂子指令。"""
 
-    @kr.command("开")
-    async def kr_on(self, event: AstrMessageEvent):
+    @keyword_cmd.command("开")
+    async def keyword_on(self, event: AstrMessageEvent):
         """打开本群的关键词回复。只有 AstrBot 管理员能执行。"""
         group_id = _group_id_of(event)
         # 私聊没有群号，群开关没有对象群
@@ -80,8 +81,8 @@ class RulesPlugin(Star):
         # 指令自己回了就够了，不要再让模型接话
         _stop_llm(event)
 
-    @kr.command("关")
-    async def kr_off(self, event: AstrMessageEvent):
+    @keyword_cmd.command("关")
+    async def keyword_off(self, event: AstrMessageEvent):
         """关闭本群的关键词回复。只有 AstrBot 管理员能执行。"""
         group_id = _group_id_of(event)
         # 私聊没有群号，群开关没有对象群
@@ -93,6 +94,24 @@ class RulesPlugin(Star):
         )
         yield event.plain_result(text)
         # 指令自己回了就够了，不要再让模型接话
+        _stop_llm(event)
+
+    @keyword_cmd.command("批量")
+    async def keyword_batch(self, event: AstrMessageEvent):
+        """批量导入本群关键词。只有 AstrBot 管理员能执行，不经过模型。"""
+        group_id = _group_id_of(event)
+        # 私聊没有群号，规则没有生效的群
+        if not group_id:
+            yield event.plain_result("这个命令要在群里用。")
+            return
+        text = await import_rules(
+            self.context,
+            self.keywords,
+            event,
+            group_id,
+            event.message_str or "",
+        )
+        yield event.plain_result(text)
         _stop_llm(event)
 
     @filter.llm_tool(name="keyword_add")

@@ -82,6 +82,15 @@ class KeywordStore:
             await asyncio.to_thread(self._upsert_sync, group_id, keyword, reply)
             await asyncio.to_thread(self._load_snapshot)
 
+    async def upsert_many(self, group_id: str, items: list[tuple[str, str]]) -> None:
+        """一次写入多条新规则。空列表直接返回，避免无意义地重建快照。"""
+        # 没有要写的行就别重建快照，热路径继续用旧内存
+        if not items:
+            return
+        async with self._lock:
+            await asyncio.to_thread(self._upsert_many_sync, group_id, items)
+            await asyncio.to_thread(self._load_snapshot)
+
     async def delete(self, group_id: str, keyword: str) -> bool:
         """删掉一条规则。返回是否真删掉了一行，用来区分「删成功」和「本来就没有」。"""
         async with self._lock:
@@ -97,6 +106,19 @@ class KeywordStore:
                 "INSERT INTO keyword_reply(group_id, keyword, reply) VALUES (?, ?, ?) "
                 "ON CONFLICT(group_id, keyword) DO UPDATE SET reply = excluded.reply",
                 (group_id, keyword, reply),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _upsert_many_sync(self, group_id: str, items: list[tuple[str, str]]) -> None:
+        """同步批量写库，给 to_thread 用。同一事务提交，避免写一半失败留下半成品。"""
+        conn = connect(self.db_path)
+        try:
+            conn.executemany(
+                "INSERT INTO keyword_reply(group_id, keyword, reply) VALUES (?, ?, ?) "
+                "ON CONFLICT(group_id, keyword) DO UPDATE SET reply = excluded.reply",
+                [(group_id, keyword, reply) for keyword, reply in items],
             )
             conn.commit()
         finally:

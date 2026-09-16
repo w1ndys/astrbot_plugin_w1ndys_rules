@@ -17,5 +17,11 @@ REPLY_MAX_LEN = 500
 # 列关键词时一次最多回多少条。超出的只报数量，不刷屏。
 KEYWORD_LIST_LIMIT = 30
 
+# 一次批量导入最多接受多少条非空行。再多就整批拒绝，避免误粘贴把库撑爆。
+KEYWORD_BATCH_MAX_LINES = 200
+
+# 批量导入回报里，冲突和跳过最多各列多少条。超出的只报数量。
+KEYWORD_BATCH_DETAIL_LIMIT = 10
+
 # 读不到 AstrBot 真实配置时的兜底唤醒前缀。AstrBot 自己的默认值也是 /。
 DEFAULT_WAKE_PREFIX = "/"

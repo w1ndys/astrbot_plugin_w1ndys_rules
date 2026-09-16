@@ -1,7 +1,7 @@
 # 业务层：把 AstrBot 实际的唤醒前缀拼进给管理员看的文案。
 #
 # 唤醒前缀是部署级配置，默认是 /，也可以被改成任意词。指令必须带上它才会被
-# 识别，所以文案里写死 /kr 到了自定义前缀的部署上就会误导管理员。
+# 识别，所以文案里写死 /关键词 到了自定义前缀的部署上就会误导管理员。
 # 前缀统一从这里取，需要展示指令的地方都调 format_command。
 
 from ..entity.constants import DEFAULT_WAKE_PREFIX
@@ -16,7 +16,7 @@ def prefixes(context: object) -> list[str]:
 
 
 def format_command(context: object, command: str) -> str:
-    """拼出管理员实际要敲的指令，例如「卷卷kr 关」。"""
+    """拼出管理员实际要敲的指令，例如「卷卷关键词 关」。"""
     # 配了多个前缀时只示范第一个，全列出来反而啰嗦
     return f"{prefixes(context)[0]}{command}"
 
