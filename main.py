@@ -22,6 +22,7 @@ from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.admin_command import handle_admin_command
+from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
@@ -99,7 +100,7 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
-        """群消息：先看是不是管理命令，再看是不是关键词命中。两条都不进模型。"""
+        """群消息：管理命令、违禁词、关键词。前两条命中后都要停 LLM。"""
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
@@ -122,6 +123,21 @@ class RulesPlugin(Star):
         # 管理命令无论有没有回包都要停 LLM，避免带前缀时模型再接一句
         if handled:
             # 管理员有文案；群员误发静默
+            if reply:
+                yield event.plain_result(reply)
+            _stop_llm(event)
+            return
+        handled, reply = await handle_forbidden_message(
+            self.config,
+            self.switches,
+            event,
+            group_id,
+            text,
+            self._using_provider,
+        )
+        # 模型判定「是」后已经撤回/禁言/飞书，群提醒有文案才发
+        if handled:
+            # 提醒留空就只处置，不在群里再说话
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)

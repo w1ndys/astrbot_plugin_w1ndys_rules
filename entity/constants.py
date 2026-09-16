@@ -38,10 +38,16 @@ CMD_FORBIDDEN_OFF = "违禁词 关"
 # 违禁词禁言秒数没填时的默认值。WebUI 可改。
 DEFAULT_FORBIDDEN_MUTE_SECONDS = 60
 
+# QQ 单次禁言上限 30 天。超过就夹到这个值，避免协议端直接拒绝。
+MAX_FORBIDDEN_MUTE_SECONDS = 2592000
+
 # 插件 WebUI 里违禁词字段。不是 SQLite 业务表。
 FORBIDDEN_CFG_TRIGGER_WORDS = "forbidden_trigger_words"
 FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_GUIDELINE = "forbidden_guideline"
+FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
+FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
+FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
 
 # 注册插件 Page API 时用的插件名，必须和仓库目录名一致。
 PLUGIN_NAME = "astrbot_plugin_w1ndys_rules"
