@@ -1,0 +1,17 @@
+# 不把本机缓存、虚拟环境和 SQLite 运行时文件推进仓库。
+# 技能和 AGENTS.md 要进 git，所以不忽略 .agents/ 和 .ohmyagent/。
+
+__pycache__/
+*.py[cod]
+*$py.class
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.DS_Store
+
+# 业务库在 AstrBot data 目录，测试库在临时目录。仓库里出现 db 多半是误跑出来的。
+*.db
+*.db-wal
+*.db-shm
