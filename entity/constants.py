@@ -37,3 +37,6 @@ CMD_FORBIDDEN_OFF = "违禁词 关"
 
 # 违禁词禁言秒数没填时的默认值。WebUI 可改。
 DEFAULT_FORBIDDEN_MUTE_SECONDS = 60
+
+# 插件 WebUI 里违禁词触发词字段。一行一个，不是 SQLite 业务表。
+FORBIDDEN_CFG_TRIGGER_WORDS = "forbidden_trigger_words"
