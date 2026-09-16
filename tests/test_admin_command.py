@@ -18,9 +18,13 @@ from astrbot_plugin_w1ndys_rules.business.admin_command import (
 )
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
+    CMD_FORBIDDEN_OFF,
+    CMD_FORBIDDEN_ON,
     CMD_KEYWORD_BATCH,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    FEATURE_FORBIDDEN,
+    FEATURE_KEYWORD,
 )
 
 
@@ -63,10 +67,16 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     def test_parse_on_off_must_be_exact(self) -> None:
-        self.assertEqual(parse_admin_command(CMD_KEYWORD_ON), "on")
-        self.assertEqual(parse_admin_command(CMD_KEYWORD_OFF), "off")
+        self.assertEqual(parse_admin_command(CMD_KEYWORD_ON), "keyword_on")
+        self.assertEqual(parse_admin_command(CMD_KEYWORD_OFF), "keyword_off")
         self.assertEqual(parse_admin_command("关键词 开 吧"), "")
         self.assertEqual(parse_admin_command("关键词"), "")
+
+    def test_parse_forbidden_on_off_must_be_exact(self) -> None:
+        self.assertEqual(parse_admin_command(CMD_FORBIDDEN_ON), "forbidden_on")
+        self.assertEqual(parse_admin_command(CMD_FORBIDDEN_OFF), "forbidden_off")
+        self.assertEqual(parse_admin_command("违禁词 开 吧"), "")
+        self.assertEqual(parse_admin_command("违禁词"), "")
 
     def test_parse_batch_header(self) -> None:
         self.assertEqual(parse_admin_command(CMD_KEYWORD_BATCH), "batch")
@@ -87,6 +97,22 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("已开启", reply)
         self.assertIn(CMD_KEYWORD_OFF, reply)
         self.assertNotIn("卷卷", reply)
+        self.assertTrue(self.switches.is_on(self.group_id, FEATURE_KEYWORD))
+
+    async def test_forbidden_on_does_not_enable_keyword(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            FakeEvent(admin=True),
+            self.group_id,
+            CMD_FORBIDDEN_ON,
+        )
+        self.assertTrue(handled)
+        self.assertIn("已开启本群的违禁词", reply)
+        self.assertIn(CMD_FORBIDDEN_OFF, reply)
+        self.assertTrue(self.switches.is_on(self.group_id, FEATURE_FORBIDDEN))
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_KEYWORD))
 
     async def test_non_admin_is_silent(self) -> None:
         handled, reply = await handle_admin_command(
@@ -99,6 +125,19 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(handled)
         self.assertEqual(reply, "")
+
+    async def test_forbidden_non_admin_is_silent(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            FakeEvent(admin=False),
+            self.group_id,
+            CMD_FORBIDDEN_ON,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "")
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_FORBIDDEN))
 
     async def test_plain_text_is_not_handled(self) -> None:
         handled, reply = await handle_admin_command(

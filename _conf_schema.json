@@ -1,0 +1,38 @@
+{
+  "forbidden_trigger_words": {
+    "description": "违禁词触发词",
+    "type": "string",
+    "default": "",
+    "hint": "一行一个。群消息里包含任一触发词才送大模型判断；英文不区分大小写。留空则不会触发。"
+  },
+  "forbidden_samples": {
+    "description": "违禁样本",
+    "type": "string",
+    "default": "",
+    "hint": "给大模型看的正反例或典型违禁说法，可多行。不是群里的触发词表。"
+  },
+  "forbidden_guideline": {
+    "description": "违禁长什么样",
+    "type": "string",
+    "default": "",
+    "hint": "用自然语言说明什么样的消息算违禁。大模型按这份设定判断。"
+  },
+  "forbidden_mute_seconds": {
+    "description": "禁言秒数",
+    "type": "int",
+    "default": 60,
+    "hint": "判定违禁后禁言多久。没填时按 60 秒。"
+  },
+  "forbidden_remind_text": {
+    "description": "提醒文案",
+    "type": "string",
+    "default": "",
+    "hint": "判定违禁后发到群里的提醒。留空则暂时不发群内提醒。"
+  },
+  "forbidden_feishu_webhook": {
+    "description": "飞书 webhook",
+    "type": "string",
+    "default": "",
+    "hint": "飞书自定义机器人 webhook，只填在本机 WebUI，不要写进代码仓。留空则发不出飞书通知。"
+  }
+}

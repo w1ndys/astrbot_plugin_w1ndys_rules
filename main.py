@@ -32,6 +32,8 @@ class RulesPlugin(Star):
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
+        # 违禁词样本、设定、禁言秒数、飞书 webhook 走插件 WebUI，不进业务表
+        self.config = config
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
         self.switches = GroupSwitchStore(db_path)

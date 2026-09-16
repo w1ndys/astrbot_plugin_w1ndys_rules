@@ -6,6 +6,7 @@ DB_FILE_NAME = "rules.db"
 
 # 包内功能键。群开关按「群号 + 功能键」记录，以后加功能时在这里追加。
 FEATURE_KEYWORD = "keyword"
+FEATURE_FORBIDDEN = "forbidden"
 
 # 关键词长度上限。命中要求整条消息与关键词完全相等，太长没人会真的发出来，
 # 只会白占内存快照。
@@ -31,3 +32,8 @@ DEFAULT_WAKE_PREFIX = "/"
 CMD_KEYWORD_ON = "关键词 开"
 CMD_KEYWORD_OFF = "关键词 关"
 CMD_KEYWORD_BATCH = "关键词 批量"
+CMD_FORBIDDEN_ON = "违禁词 开"
+CMD_FORBIDDEN_OFF = "违禁词 关"
+
+# 违禁词禁言秒数没填时的默认值。WebUI 可改。
+DEFAULT_FORBIDDEN_MUTE_SECONDS = 60

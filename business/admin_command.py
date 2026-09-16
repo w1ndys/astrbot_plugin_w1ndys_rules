@@ -7,10 +7,16 @@
 
 from .._shared.group_switch_store import GroupSwitchStore
 from ..data.keyword_store import KeywordStore
-from ..entity.constants import CMD_KEYWORD_BATCH, CMD_KEYWORD_OFF, CMD_KEYWORD_ON
+from ..entity.constants import (
+    CMD_FORBIDDEN_OFF,
+    CMD_FORBIDDEN_ON,
+    CMD_KEYWORD_BATCH,
+    CMD_KEYWORD_OFF,
+    CMD_KEYWORD_ON,
+)
 from .auth import is_admin
 from .keyword_batch import import_rules
-from .switch_command import run_switch_command
+from .switch_command import run_forbidden_switch, run_keyword_switch
 
 
 def parse_admin_command(text: str) -> str:
@@ -21,9 +27,13 @@ def parse_admin_command(text: str) -> str:
         return ""
     # 开、关必须整条相等，后面再跟字就不认
     if payload == CMD_KEYWORD_ON:
-        return "on"
+        return "keyword_on"
     if payload == CMD_KEYWORD_OFF:
-        return "off"
+        return "keyword_off"
+    if payload == CMD_FORBIDDEN_ON:
+        return "forbidden_on"
+    if payload == CMD_FORBIDDEN_OFF:
+        return "forbidden_off"
     first = payload.splitlines()[0].strip()
     # 第一行只是「关键词 批量」，后面才是要导入的行
     if first == CMD_KEYWORD_BATCH:
@@ -51,9 +61,15 @@ async def handle_admin_command(
     if not is_admin(event):
         return True, ""
     # 打开本群关键词回复
-    if action == "on":
-        return True, await run_switch_command(switches, event, group_id, True)
+    if action == "keyword_on":
+        return True, await run_keyword_switch(switches, event, group_id, True)
     # 关闭本群关键词回复
-    if action == "off":
-        return True, await run_switch_command(switches, event, group_id, False)
+    if action == "keyword_off":
+        return True, await run_keyword_switch(switches, event, group_id, False)
+    # 打开本群违禁词
+    if action == "forbidden_on":
+        return True, await run_forbidden_switch(switches, event, group_id, True)
+    # 关闭本群违禁词
+    if action == "forbidden_off":
+        return True, await run_forbidden_switch(switches, event, group_id, False)
     return True, await import_rules(context, keywords, event, group_id, text)
