@@ -7,6 +7,7 @@ DB_FILE_NAME = "rules.db"
 # 包内功能键。群开关按「群号 + 功能键」记录，以后加功能时在这里追加。
 FEATURE_KEYWORD = "keyword"
 FEATURE_FORBIDDEN = "forbidden"
+FEATURE_WELCOME = "welcome"
 
 # 关键词长度上限。命中要求整条消息与关键词完全相等，太长没人会真的发出来，
 # 只会白占内存快照。
