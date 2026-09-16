@@ -100,23 +100,26 @@ async def update_rule(
 
 
 async def delete_rule(
-    context: object,
     keywords: KeywordStore,
     event: object,
     group_id: str,
     keyword: str,
 ) -> str:
-    """删掉一条规则。"""
+    """删掉一条规则。删除只认去掉首尾空白后的原文，不校验唤醒前缀。"""
     if not is_admin(event):
         return REJECT_MESSAGE
-    clean_keyword, error = check_keyword(context, keyword)
-    if error:
-        return error
-    removed = await keywords.delete(group_id, clean_keyword)
+    text = keyword.strip()
+    # 空关键词对不上任何一条规则，先拦掉
+    if not text:
+        return "关键词不能是空的。"
+    # 超长词写不进库，删除也按同一上限拒绝，避免拿垃圾长串去查
+    if len(text) > KEYWORD_MAX_LEN:
+        return f"关键词太长了，最多 {KEYWORD_MAX_LEN} 个字。"
+    removed = await keywords.delete(group_id, text)
     # 没删掉说明本来就没这条，别回报成删除成功
     if not removed:
-        return f"本群没有关键词「{clean_keyword}」，没有删除。"
-    return f"已删除关键词「{clean_keyword}」。"
+        return f"本群没有关键词「{text}」，没有删除。"
+    return f"已删除关键词「{text}」。"
 
 
 def list_rules(keywords: KeywordStore, event: object, group_id: str) -> str:

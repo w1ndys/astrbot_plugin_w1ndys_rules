@@ -132,7 +132,7 @@ class RulesPlugin(Star):
         group_id = _group_id_of(event)
         if not group_id:
             return "这个功能只能在群里用。"
-        return await delete_rule(self.context, self.keywords, event, group_id, keyword)
+        return await delete_rule(self.keywords, event, group_id, keyword)
 
     @filter.llm_tool(name="keyword_list")
     async def tool_keyword_list(self, event: AstrMessageEvent) -> str:
