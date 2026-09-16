@@ -1,7 +1,7 @@
-# 入口层：向 AstrBot 注册群消息监听、群开关命令，以及给模型用的关键词管理工具。
+# 入口层：向 AstrBot 注册群消息监听，以及给模型用的关键词管理工具。
 #
-# 群员命中关键词由代码直接回复，不经过模型；回复完拦住事件，
-# 模型不会再在关键词回复后面补一句。
+# 群员命中关键词、管理员开/关/批量，都由代码直接回复，不经过模型；回复完拦住事件，
+# 模型不会再在后面补一句。开、关、批量不走指令过滤器，所以不需要唤醒前缀。
 #
 # 匹配用的是 AstrBot 解析出来的纯文本 event.message_str，不是 OneBot 原始
 # raw_message。旧机器人比的是 raw_message，带 @ 或图片的消息会带上 CQ 码，
@@ -20,10 +20,9 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
+from .business.admin_command import handle_admin_command
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
-from .business.keyword_batch import import_rules
 from .business.keyword_reply import pick_reply
-from .business.switch_command import run_switch_command
 from .data.keyword_store import KeywordStore
 from .entity.constants import DB_FILE_NAME
 
@@ -40,7 +39,7 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
-        """群员发消息时，命中关键词就用代码回一句，不进模型。"""
+        """群消息：先看是不是管理命令，再看是不是关键词命中。两条都不进模型。"""
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
@@ -49,10 +48,23 @@ class RulesPlugin(Star):
         # 图片、语音这类没有文本的消息没得比，直接跳过
         if not text:
             return
-        # 斜杠开头的是 AstrBot 默认唤醒前缀下的指令，交给指令处理器，不拿来当关键词匹配。
-        # 自定义唤醒前缀（如「卷卷」）下指令会变成「关键词 开」，这里拦不住，
-        # 只有关键词恰好等于某个指令串时才会撞上。
+        # 斜杠开头的是别的插件或默认前缀指令，不拿来当关键词或本插件命令
         if text.startswith("/"):
+            return
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            event,
+            group_id,
+            text,
+        )
+        # 管理命令无论有没有回包都要停 LLM，避免带前缀时模型再接一句
+        if handled:
+            # 管理员有文案；群员误发静默
+            if reply:
+                yield event.plain_result(reply)
+            _stop_llm(event)
             return
         reply = pick_reply(self.keywords, self.switches, group_id, text)
         # 没命中就静默放过，让消息继续走后面的流程
@@ -60,58 +72,6 @@ class RulesPlugin(Star):
             return
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
-        _stop_llm(event)
-
-    @filter.command_group("关键词")
-    def keyword_cmd(self):
-        """关键词回复指令组：关键词 开、关键词 关、关键词 批量。指令组本身不做事，只用来挂子指令。"""
-
-    @keyword_cmd.command("开")
-    async def keyword_on(self, event: AstrMessageEvent):
-        """打开本群的关键词回复。只有 AstrBot 管理员能执行。"""
-        group_id = _group_id_of(event)
-        # 私聊没有群号，群开关没有对象群
-        if not group_id:
-            yield event.plain_result("这个命令要在群里用。")
-            return
-        text = await run_switch_command(
-            self.switches, self.context, event, group_id, True
-        )
-        yield event.plain_result(text)
-        # 指令自己回了就够了，不要再让模型接话
-        _stop_llm(event)
-
-    @keyword_cmd.command("关")
-    async def keyword_off(self, event: AstrMessageEvent):
-        """关闭本群的关键词回复。只有 AstrBot 管理员能执行。"""
-        group_id = _group_id_of(event)
-        # 私聊没有群号，群开关没有对象群
-        if not group_id:
-            yield event.plain_result("这个命令要在群里用。")
-            return
-        text = await run_switch_command(
-            self.switches, self.context, event, group_id, False
-        )
-        yield event.plain_result(text)
-        # 指令自己回了就够了，不要再让模型接话
-        _stop_llm(event)
-
-    @keyword_cmd.command("批量")
-    async def keyword_batch(self, event: AstrMessageEvent):
-        """批量导入本群关键词。只有 AstrBot 管理员能执行，不经过模型。"""
-        group_id = _group_id_of(event)
-        # 私聊没有群号，规则没有生效的群
-        if not group_id:
-            yield event.plain_result("这个命令要在群里用。")
-            return
-        text = await import_rules(
-            self.context,
-            self.keywords,
-            event,
-            group_id,
-            event.message_str or "",
-        )
-        yield event.plain_result(text)
         _stop_llm(event)
 
     @filter.llm_tool(name="keyword_add")

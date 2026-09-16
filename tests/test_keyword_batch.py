@@ -83,7 +83,8 @@ class KeywordBatchTest(unittest.IsolatedAsyncioTestCase):
             self.context, self.store, self.event, self.group_id, "关键词 批量"
         )
         self.assertIn("用法", text)
-        self.assertIn("卷卷关键词 批量", text)
+        self.assertIn("关键词 批量", text)
+        self.assertNotIn("卷卷关键词 批量", text)
 
     async def test_non_admin_is_rejected(self) -> None:
         text = await import_rules(

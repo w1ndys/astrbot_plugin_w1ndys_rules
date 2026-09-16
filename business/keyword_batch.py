@@ -7,23 +7,25 @@
 # 自然语言的「改」。本批里重复的关键词只收下第一次，后面的算跳过。
 
 from ..data.keyword_store import KeywordStore
-from ..entity.constants import KEYWORD_BATCH_DETAIL_LIMIT, KEYWORD_BATCH_MAX_LINES
+from ..entity.constants import (
+    CMD_KEYWORD_BATCH,
+    KEYWORD_BATCH_DETAIL_LIMIT,
+    KEYWORD_BATCH_MAX_LINES,
+)
 from .auth import is_admin
 from .keyword_admin import REJECT_MESSAGE, check_keyword, check_reply
-from .wake_prefix import format_command
 
 # 一行里关键词和回复的分隔符。中文输入法常打出全角竖线，表格粘贴常带 Tab。
 _SEPARATORS = ("|", "｜", "\t")
 
 
-def usage_text(context: object) -> str:
-    """没有贴内容时的用法说明。指令写法带上本机实际唤醒前缀。"""
-    command = format_command(context, "关键词 批量")
+def usage_text() -> str:
+    """没有贴内容时的用法说明。批量命令不带唤醒前缀。"""
     return (
-        f"用法：在「{command}」后面换行，一行一条，关键词和回复用 | 分开。"
+        f"用法：在「{CMD_KEYWORD_BATCH}」后面换行，一行一条，关键词和回复用 | 分开。"
         "已有关键词会报冲突，不会覆盖。\n"
         "示例：\n"
-        f"{command}\n"
+        f"{CMD_KEYWORD_BATCH}\n"
         "原神|好玩\n"
         "你好|你好呀"
     )
@@ -40,16 +42,13 @@ def strip_command_header(text: str) -> str:
     extra = ""
     rest = lines[1:]
     # 第一行只是命令，数据在后面的换行里
-    if first == "关键词 批量" or first == "批量":
+    if first == CMD_KEYWORD_BATCH:
         extra = ""
-    # 命令和第一条数据写在同一行
-    elif first.startswith("关键词 批量"):
-        extra = first[len("关键词 批量") :].strip()
-    # 只剥独立的「批量」，不要把「批量|回复」这种数据行当命令
-    elif first.startswith("批量") and (len(first) == 2 or first[2] in " \t"):
-        extra = first[2:].strip()
+    # 命令和第一条数据写在同一行，中间必须是空格或 Tab
+    elif first.startswith(CMD_KEYWORD_BATCH) and first[len(CMD_KEYWORD_BATCH)] in " \t":
+        extra = first[len(CMD_KEYWORD_BATCH) :].strip()
     else:
-        # 命令过滤器可能已经把「关键词 批量」剥掉，第一行就是数据
+        # 第一行不是命令头，整段都当数据
         return payload
     # 同一行里命令后面还带着第一条，要拼回正文
     if extra:
@@ -130,7 +129,7 @@ async def import_rules(
     payload = strip_command_header(raw_text)
     # 只发了命令没贴内容，回用法而不是空成功
     if not payload.strip():
-        return usage_text(context)
+        return usage_text()
     data_line_count = _count_data_lines(payload)
     # 一次贴太多多半是误操作，整批拒绝以免把库撑爆
     if data_line_count > KEYWORD_BATCH_MAX_LINES:

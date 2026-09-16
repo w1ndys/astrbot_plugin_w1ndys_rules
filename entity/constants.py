@@ -25,3 +25,9 @@ KEYWORD_BATCH_DETAIL_LIMIT = 10
 
 # 读不到 AstrBot 真实配置时的兜底唤醒前缀。AstrBot 自己的默认值也是 /。
 DEFAULT_WAKE_PREFIX = "/"
+
+# 群里直接发的管理命令。不走 AstrBot 指令过滤器，所以不需要唤醒前缀。
+# 开、关必须整条消息完全相等，避免把后面的闲聊当命令。
+CMD_KEYWORD_ON = "关键词 开"
+CMD_KEYWORD_OFF = "关键词 关"
+CMD_KEYWORD_BATCH = "关键词 批量"
