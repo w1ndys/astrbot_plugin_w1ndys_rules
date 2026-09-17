@@ -14,6 +14,8 @@ from ..entity.constants import (
     CMD_KEYWORD_BATCH,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    CMD_VERIFY_OFF,
+    CMD_VERIFY_ON,
     CMD_WELCOME_OFF,
     CMD_WELCOME_ON,
     CMD_WELCOME_SET,
@@ -24,6 +26,7 @@ from .keyword_batch import import_rules
 from .switch_command import (
     run_forbidden_switch,
     run_keyword_switch,
+    run_verify_switch,
     run_welcome_switch,
 )
 from .welcome_admin import set_welcome, show_welcome
@@ -62,6 +65,12 @@ def parse_admin_command(text: str) -> str:
         return "welcome_off"
     if payload == CMD_WELCOME_SHOW:
         return "welcome_show"
+    # 入群验证开、关也必须整条相等
+    if payload == CMD_VERIFY_ON:
+        return "verify_on"
+    # 关掉必须整句相等，避免把后面闲聊当命令
+    if payload == CMD_VERIFY_OFF:
+        return "verify_off"
     first = payload.splitlines()[0].strip()
     # 「关键词 批量」后面才是要导入的行
     if _has_command_header(first, CMD_KEYWORD_BATCH):
@@ -123,6 +132,12 @@ async def _run_admin_action(
     # 关闭本群欢迎语开关
     if action == "welcome_off":
         return await run_welcome_switch(switches, event, group_id, False)
+    # 打开本群入群验证，入群发码下一刀再接
+    if action == "verify_on":
+        return await run_verify_switch(switches, event, group_id, True)
+    # 关闭本群入群验证
+    if action == "verify_off":
+        return await run_verify_switch(switches, event, group_id, False)
     # 查看本群已保存的欢迎语
     if action == "welcome_show":
         return show_welcome(welcome, event, group_id)

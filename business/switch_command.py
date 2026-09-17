@@ -7,10 +7,13 @@ from ..entity.constants import (
     CMD_FORBIDDEN_ON,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    CMD_VERIFY_OFF,
+    CMD_VERIFY_ON,
     CMD_WELCOME_OFF,
     CMD_WELCOME_ON,
     FEATURE_FORBIDDEN,
     FEATURE_KEYWORD,
+    FEATURE_VERIFY,
     FEATURE_WELCOME,
 )
 from .auth import is_admin
@@ -82,4 +85,20 @@ async def run_welcome_switch(
         CMD_WELCOME_ON,
         CMD_WELCOME_OFF,
         "欢迎语",
+    )
+
+
+async def run_verify_switch(
+    switches: GroupSwitchStore, event: object, group_id: str, enabled: bool
+) -> str:
+    """开或关本群的入群验证。本刀只改开关，入群发码下一刀再接。"""
+    return await run_switch_command(
+        switches,
+        event,
+        group_id,
+        enabled,
+        FEATURE_VERIFY,
+        CMD_VERIFY_ON,
+        CMD_VERIFY_OFF,
+        "入群验证",
     )

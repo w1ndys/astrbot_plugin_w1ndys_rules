@@ -24,12 +24,15 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     CMD_KEYWORD_BATCH,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    CMD_VERIFY_OFF,
+    CMD_VERIFY_ON,
     CMD_WELCOME_OFF,
     CMD_WELCOME_ON,
     CMD_WELCOME_SET,
     CMD_WELCOME_SHOW,
     FEATURE_FORBIDDEN,
     FEATURE_KEYWORD,
+    FEATURE_VERIFY,
     FEATURE_WELCOME,
 )
 
@@ -216,6 +219,42 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(handled)
         self.assertEqual(reply, "本群欢迎语：\n欢迎入群~")
+
+    def test_parse_verify_on_off_must_be_exact(self) -> None:
+        self.assertEqual(parse_admin_command(CMD_VERIFY_ON), "verify_on")
+        self.assertEqual(parse_admin_command(CMD_VERIFY_OFF), "verify_off")
+        self.assertEqual(parse_admin_command("入群验证 开 吧"), "")
+        self.assertEqual(parse_admin_command("入群验证"), "")
+
+    async def test_verify_on_does_not_enable_keyword(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=True),
+            self.group_id,
+            CMD_VERIFY_ON,
+        )
+        self.assertTrue(handled)
+        self.assertIn("已开启本群的入群验证", reply)
+        self.assertIn(CMD_VERIFY_OFF, reply)
+        self.assertTrue(self.switches.is_on(self.group_id, FEATURE_VERIFY))
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_KEYWORD))
+
+    async def test_verify_non_admin_is_silent(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=False),
+            self.group_id,
+            CMD_VERIFY_ON,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "")
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_VERIFY))
 
     async def test_welcome_non_admin_is_silent(self) -> None:
         handled, reply = await handle_admin_command(
