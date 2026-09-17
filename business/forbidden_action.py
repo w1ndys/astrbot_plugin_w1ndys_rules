@@ -59,8 +59,7 @@ def feishu_text_payload(text: str) -> dict:
 def feishu_alert_text(group_id: str, user_id: str, trigger: str, text: str) -> str:
     """管理员在飞书里看到的内容。不含 webhook。"""
     return (
-        f"违禁词命中\n群：{group_id}\n成员：{user_id}\n"
-        f"触发词：{trigger}\n消息：{text}"
+        f"违禁词命中\n群：{group_id}\n成员：{user_id}\n触发词：{trigger}\n消息：{text}"
     )
 
 
@@ -124,7 +123,7 @@ async def call_action(event: object, action: str, **kwargs: object) -> bool:
         return False
     try:
         await asyncio.wait_for(chat(action, **kwargs), 15)
-    except Exception:
+    except Exception:  # noqa: BLE001 - OneBot 适配器异常类型不固定，失败时继续后续提醒
         # 协议失败不打断后面的提醒和飞书
         return False
     return True
@@ -188,7 +187,7 @@ async def notify_feishu(
     send = poster or post_json
     try:
         await asyncio.to_thread(send, url, body)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 网络层异常类型不固定，不能中断群内处置
         # 飞书失败不影响群里的撤回和禁言
         return
 

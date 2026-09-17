@@ -1,4 +1,4 @@
-# 入口层：向 AstrBot 注册群消息监听、关键词管理工具，以及违禁词 WebUI 测试页。
+# 入口层：向 AstrBot 注册群消息监听、关键词/违禁配置工具，以及违禁词测试页。
 #
 # 群员命中关键词、管理员开/关/批量，都由代码直接回复，不经过模型；回复完拦住事件，
 # 模型不会再在后面补一句。开、关、批量不走指令过滤器，所以不需要唤醒前缀。
@@ -22,6 +22,12 @@ from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.admin_command import handle_admin_command
+from .business.forbidden_admin import (
+    add_item,
+    delete_item,
+    list_items,
+    update_item,
+)
 from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_judge import (
     complete_yes_no,
@@ -30,6 +36,7 @@ from .business.forbidden_judge import (
 )
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
+from .data.forbidden_store import ForbiddenStore
 from .data.keyword_store import KeywordStore
 from .entity.constants import DB_FILE_NAME, PLUGIN_NAME
 
@@ -39,13 +46,14 @@ class RulesPlugin(Star):
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
-        # 违禁词样本、设定、禁言秒数、飞书 webhook 走插件 WebUI，不进业务表
+        # 判断准则、禁言秒数、提醒和 webhook 走 WebUI；触发词、样本按群进数据库。
         self.config = config
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
+        self.forbidden = ForbiddenStore(db_path)
         self.switches = GroupSwitchStore(db_path)
         self._register_forbidden_page()
-        logger.info("[rules] 关键词规则已载入内存：%s", db_path)
+        logger.info("[rules] 群规业务库已载入内存：%s", db_path)
 
     def _register_forbidden_page(self) -> None:
         """注册违禁词 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
@@ -68,8 +76,12 @@ class RulesPlugin(Star):
         # 不是对象就取不出 text
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
+        group_id = str(payload.get("group_id") or "").strip()
+        # 触发词和样本按群存储，测试页必须明确选择群。
+        if not group_id:
+            return error_response("请填写要测试的群号。", status_code=400)
         text = str(payload.get("text") or "")
-        plan = plan_forbidden_test(self.config, text)
+        plan = plan_forbidden_test(self.config, self.forbidden, group_id, text)
         # 没到模型这一步，直接把原因回给页面
         if plan.status != "ready":
             return json_response(test_result_payload(plan, "skip"))
@@ -94,7 +106,7 @@ class RulesPlugin(Star):
             return None
         try:
             return await getter()
-        except Exception:
+        except Exception:  # noqa: BLE001 - 提供商插件异常类型不固定，页面只需返回不可用
             # 提供商没配好时测试页报失败，不要把插件打挂
             return None
 
@@ -129,6 +141,7 @@ class RulesPlugin(Star):
             return
         handled, reply = await handle_forbidden_message(
             self.config,
+            self.forbidden,
             self.switches,
             event,
             group_id,
@@ -149,6 +162,83 @@ class RulesPlugin(Star):
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
         _stop_llm(event)
+
+    @filter.llm_tool(name="forbidden_add")
+    async def tool_forbidden_add(
+        self,
+        event: AstrMessageEvent,
+        kind: str,
+        content: str,
+    ) -> str:
+        """给本群新增违禁触发词或违禁样本。只在管理员明确要求新增时调用。
+        写操作直接执行，不要再向管理员确认。最终回复要如实保留工具返回的类型和内容。
+
+        Args:
+            kind(string): 只能是“触发词”或“违禁样本”
+            content(string): 要新增的完整内容
+        """
+        group_id = _group_id_of(event)
+        # 群号只信当前会话，不接受模型传入目标群。
+        if not group_id:
+            return "这个功能只能在群里用。"
+        return await add_item(self.forbidden, event, group_id, kind, content)
+
+    @filter.llm_tool(name="forbidden_update")
+    async def tool_forbidden_update(
+        self,
+        event: AstrMessageEvent,
+        kind: str,
+        old_content: str,
+        new_content: str,
+    ) -> str:
+        """修改本群已有的违禁触发词或违禁样本，不存在时不会新增。
+        写操作直接执行，不要再向管理员确认。最终回复要如实保留修改前后的内容。
+
+        Args:
+            kind(string): 只能是“触发词”或“违禁样本”
+            old_content(string): 数据库中现有的完整内容
+            new_content(string): 修改后的完整内容
+        """
+        group_id = _group_id_of(event)
+        # 群号只信当前会话，不接受模型传入目标群。
+        if not group_id:
+            return "这个功能只能在群里用。"
+        return await update_item(
+            self.forbidden,
+            event,
+            group_id,
+            kind,
+            old_content,
+            new_content,
+        )
+
+    @filter.llm_tool(name="forbidden_delete")
+    async def tool_forbidden_delete(
+        self,
+        event: AstrMessageEvent,
+        kind: str,
+        content: str,
+    ) -> str:
+        """删除本群一条违禁触发词或违禁样本。最终回复只转达工具结果。
+
+        Args:
+            kind(string): 只能是“触发词”或“违禁样本”
+            content(string): 要删除的完整内容
+        """
+        group_id = _group_id_of(event)
+        # 群号只信当前会话，不接受模型传入目标群。
+        if not group_id:
+            return "这个功能只能在群里用。"
+        return await delete_item(self.forbidden, event, group_id, kind, content)
+
+    @filter.llm_tool(name="forbidden_list")
+    async def tool_forbidden_list(self, event: AstrMessageEvent) -> str:
+        """列出本群数据库中的违禁触发词和违禁样本。结果必须如实转达。"""
+        group_id = _group_id_of(event)
+        # 群号只信当前会话，不接受模型传入目标群。
+        if not group_id:
+            return "这个功能只能在群里用。"
+        return list_items(self.forbidden, event, group_id)
 
     @filter.llm_tool(name="keyword_add")
     async def tool_keyword_add(

@@ -23,10 +23,22 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
-    FORBIDDEN_CFG_SAMPLES,
-    FORBIDDEN_CFG_TRIGGER_WORDS,
+    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_KIND_TRIGGER,
     MAX_FORBIDDEN_MUTE_SECONDS,
 )
+
+
+class FakeForbiddenStore:
+    """给正式群消息路径提供本群数据库规则。"""
+
+    def list_contents(self, group_id: str, kind: str) -> list[str]:
+        """返回固定触发词和样本。"""
+        if kind == FORBIDDEN_KIND_TRIGGER:
+            return ["广告"]
+        if kind == FORBIDDEN_KIND_SAMPLE:
+            return ["卖课 -> 是"]
+        return []
 
 
 class FakeSwitches:
@@ -89,8 +101,6 @@ class FakeReply:
 
 def ready_config(**extra) -> dict:
     data = {
-        FORBIDDEN_CFG_TRIGGER_WORDS: "广告",
-        FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
         FORBIDDEN_CFG_GUIDELINE: "广告算违禁。",
         FORBIDDEN_CFG_MUTE_SECONDS: 60,
         FORBIDDEN_CFG_REMIND_TEXT: "请不要发广告。",
@@ -126,6 +136,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent()
         handled, reply = await handle_forbidden_message(
             ready_config(),
+            FakeForbiddenStore(),
             FakeSwitches(False),
             event,
             "123",
@@ -138,8 +149,9 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_trigger_skips(self) -> None:
         event = FakeEvent()
-        handled, reply = await handle_forbidden_message(
+        handled, _reply = await handle_forbidden_message(
             ready_config(),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",
@@ -153,6 +165,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",
@@ -166,6 +179,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",
@@ -184,6 +198,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
 
         handled, reply = await handle_forbidden_message(
             ready_config(),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",
@@ -218,6 +233,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
                     FORBIDDEN_CFG_MUTE_SECONDS: 0,
                 }
             ),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",
@@ -235,6 +251,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent(sender="999", self_id="999")
         handled, _reply = await handle_forbidden_message(
             ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
+            FakeForbiddenStore(),
             FakeSwitches(True),
             event,
             "123",

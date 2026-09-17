@@ -10,9 +10,11 @@
     <main class="page">
       <h1>违禁词测试</h1>
       <p class="hint">
-        走和正式路径一样的触发词门槛，再问当前 AstrBot 提供商是不是违禁。
+        读取指定群在 SQLite 中的触发词和样本，再问当前 AstrBot 提供商是不是违禁。
         只在 WebUI 看结果，不会发到 QQ，也不会撤回、禁言或发飞书。
       </p>
+      <label for="group-id">群号</label>
+      <input id="group-id" type="text" placeholder="填写要读取违禁配置的群号" />
       <label for="text">待测文本</label>
       <textarea id="text" rows="6" placeholder="把群里可能发出的那句话贴这里"></textarea>
       <button id="run" type="button">测试</button>

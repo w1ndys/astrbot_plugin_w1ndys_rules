@@ -1,16 +1,4 @@
 {
-  "forbidden_trigger_words": {
-    "description": "违禁词触发词",
-    "type": "string",
-    "default": "",
-    "hint": "一行一个。群消息里包含任一触发词才送大模型判断；英文不区分大小写。留空则不会触发。"
-  },
-  "forbidden_samples": {
-    "description": "违禁样本",
-    "type": "string",
-    "default": "",
-    "hint": "给大模型看的正反例或典型违禁说法，可多行。不是群里的触发词表。"
-  },
   "forbidden_guideline": {
     "description": "违禁长什么样",
     "type": "string",

@@ -9,27 +9,10 @@ PARENT = str(ROOT.parent)
 if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
-from astrbot_plugin_w1ndys_rules.business.forbidden_match import (
-    find_trigger,
-    parse_trigger_words,
-)
-from astrbot_plugin_w1ndys_rules.entity.constants import (
-    FORBIDDEN_CFG_TRIGGER_WORDS,
-)
+from astrbot_plugin_w1ndys_rules.business.forbidden_match import find_trigger
 
 
 class ForbiddenMatchTest(unittest.TestCase):
-    def test_config_key_matches_schema(self) -> None:
-        self.assertEqual(FORBIDDEN_CFG_TRIGGER_WORDS, "forbidden_trigger_words")
-
-    def test_parse_skips_blank_lines(self) -> None:
-        words = parse_trigger_words("  广告  \n\nFreeNitro\n")
-        self.assertEqual(words, ["广告", "FreeNitro"])
-
-    def test_parse_empty(self) -> None:
-        self.assertEqual(parse_trigger_words(""), [])
-        self.assertEqual(parse_trigger_words("   \n  "), [])
-
     def test_chinese_contains(self) -> None:
         hit = find_trigger("大家来看这个广告链接", ["广告", "加群"])
         self.assertEqual(hit, "广告")
