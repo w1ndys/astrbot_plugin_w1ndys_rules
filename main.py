@@ -43,6 +43,8 @@ from .business.forbidden_judge import (
 )
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
+from .business.verify_action import unmute_user
+from .business.verify_admin import pass_user, reject_user, scan_users
 from .business.verify_handle import handle_verify_message
 from .business.verify_join import compose_join_text, start_pending
 from .business.welcome_send import is_group_increase, pick_welcome
@@ -389,6 +391,40 @@ class RulesPlugin(Star):
             ),
         )
 
+    @filter.llm_tool(name="verify_pass")
+    async def tool_verify_pass(self, event: AstrMessageEvent, user_id: str) -> str:
+        """通过本群某个人的入群验证并解禁。只在管理员明确要求通过时调用。不踢人。
+        写操作直接执行。最终回复如实转达工具结果。
+
+        Args:
+            user_id(string): 要通过的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: _verify_pass(self.verify, event, group_id, user_id),
+        )
+
+    @filter.llm_tool(name="verify_reject")
+    async def tool_verify_reject(self, event: AstrMessageEvent, user_id: str) -> str:
+        """关掉本群某个人的入群验证。只关 pending，不踢人。
+        写操作直接执行。最终回复如实转达工具结果。
+
+        Args:
+            user_id(string): 要拒绝的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: reject_user(self.verify, event, group_id, user_id),
+        )
+
+    @filter.llm_tool(name="verify_scan")
+    async def tool_verify_scan(self, event: AstrMessageEvent) -> str:
+        """扫描本群待验证的人，并在群里 @ 提醒。结果必须如实转达。不踢人。"""
+        return await _with_group(
+            event,
+            lambda group_id: _verify_scan(self.verify, event, group_id),
+        )
+
     @filter.llm_tool(name="keyword_add")
     async def tool_keyword_add(
         self,
@@ -461,6 +497,41 @@ class RulesPlugin(Star):
 
 
 ONLY_IN_GROUP = "这个功能只能在群里用。"
+
+
+async def _verify_pass(
+    store: VerifyStore, event: object, group_id: str, user_id: str
+) -> str:
+    """管理员通过后解禁。没通过就不调 OneBot。"""
+    message, unmute = await pass_user(store, event, group_id, user_id)
+    # 没删到 pending 不解禁，避免解错人
+    if unmute:
+        await unmute_user(event, group_id, unmute)
+    return message
+
+
+async def _verify_scan(store: VerifyStore, event: object, group_id: str) -> str:
+    """列出本群 pending，有人就在群里 @。"""
+    text, ids = scan_users(store, event, group_id)
+    # 没人、非管理员都不发 @
+    if ids:
+        await _send_verify_mentions(event, ids)
+    return text
+
+
+async def _send_verify_mentions(event: object, user_ids: list[str]) -> None:
+    """在群里 @ 待验证的人。没有 send 就跳过。"""
+    sender = getattr(event, "send", None)
+    # 测试桩或残缺事件发不出去
+    if not callable(sender):
+        return
+    from astrbot.api.message_components import At, Plain
+
+    chain: list = []
+    for uid in user_ids:
+        chain.append(At(qq=uid))
+    chain.append(Plain("\n请尽快在群里发送包含验证码的消息。"))
+    await sender(event.chain_result(chain))
 
 
 async def _with_group(event: object, handler) -> str:
