@@ -37,6 +37,11 @@ async function runTest() {
 }
 
 async function boot() {
+  // 普通脚本会在 AstrBot 注入的 bridge SDK 之前执行，必须用 module 等到 SDK 就绪。
+  if (!bridge) {
+    show("页面桥接未就绪，请刷新后重试。");
+    return;
+  }
   await bridge.ready();
   runButton.addEventListener("click", () => {
     runTest();
