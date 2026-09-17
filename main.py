@@ -43,6 +43,7 @@ from .business.forbidden_judge import (
 )
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
+from .business.verify_handle import handle_verify_message
 from .business.verify_join import compose_join_text, start_pending
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
@@ -130,7 +131,7 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
-        """群消息：管理命令、违禁词、关键词。前两条命中后都要停 LLM。"""
+        """群消息：管理命令、入群验证、违禁词、关键词。前三条命中后都要停 LLM。"""
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
@@ -158,6 +159,25 @@ class RulesPlugin(Star):
                 yield event.plain_result(reply)
             _stop_llm(event)
             await self._note_speak(group_id, event)
+            return
+        handled, reply, note = await handle_verify_message(
+            self.verify,
+            self.switches,
+            self.config,
+            event,
+            group_id,
+            _sender_id_of(event),
+            text,
+        )
+        # 待验证发言拦住后面的违禁和关键词
+        if handled:
+            # 通过和失败都有一句群文案
+            if reply:
+                yield event.plain_result(reply)
+            _stop_llm(event)
+            # 通过后才记活跃；失败禁言不算近 7 天发言
+            if note:
+                await self._note_speak(group_id, event)
             return
         handled, reply = await handle_forbidden_message(
             self.config,
