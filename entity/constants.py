@@ -36,11 +36,14 @@ CMD_KEYWORD_BATCH = "关键词 批量"
 CMD_FORBIDDEN_ON = "违禁词 开"
 CMD_FORBIDDEN_OFF = "违禁词 关"
 
-# 违禁配置条目类型。触发词决定是否送模型，样本给模型提供判断参考。
+# 违禁配置条目类型。触发词决定是否送模型；样本已改回 WebUI，库表仍保留 kind 字段。
 FORBIDDEN_KIND_TRIGGER = "trigger"
 FORBIDDEN_KIND_SAMPLE = "sample"
 
-# 单条违禁配置的长度上限，避免误粘贴整篇文本长期占用快照。
+# 触发词全局共用，不再按群隔离。写入和读取都用这个固定键。
+FORBIDDEN_GLOBAL_SCOPE = "*"
+
+# 单条违禁触发词的长度上限，避免误粘贴整篇文本长期占用快照。
 FORBIDDEN_ITEM_MAX_LEN = 500
 
 # 查询时一次最多返回多少条，超出只报告剩余数量，避免刷屏。
@@ -52,8 +55,9 @@ DEFAULT_FORBIDDEN_MUTE_SECONDS = 60
 # QQ 单次禁言上限 30 天。超过就夹到这个值，避免协议端直接拒绝。
 MAX_FORBIDDEN_MUTE_SECONDS = 2592000
 
-# 插件 WebUI 里保留单值违禁配置；触发词和样本进入 SQLite。
+# 插件 WebUI：准则单行，样本多行；触发词进 SQLite。
 FORBIDDEN_CFG_GUIDELINE = "forbidden_guideline"
+FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"

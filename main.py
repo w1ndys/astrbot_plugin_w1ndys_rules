@@ -46,7 +46,7 @@ class RulesPlugin(Star):
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
-        # 判断准则、禁言秒数、提醒和 webhook 走 WebUI；触发词、样本按群进数据库。
+        # 判断准则、样本、禁言秒数、提醒和 webhook 走 WebUI；触发词全局进数据库。
         self.config = config
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
@@ -76,12 +76,8 @@ class RulesPlugin(Star):
         # 不是对象就取不出 text
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
-        group_id = str(payload.get("group_id") or "").strip()
-        # 触发词和样本按群存储，测试页必须明确选择群。
-        if not group_id:
-            return error_response("请填写要测试的群号。", status_code=400)
         text = str(payload.get("text") or "")
-        plan = plan_forbidden_test(self.config, self.forbidden, group_id, text)
+        plan = plan_forbidden_test(self.config, self.forbidden, text)
         # 没到模型这一步，直接把原因回给页面
         if plan.status != "ready":
             return json_response(test_result_payload(plan, "skip"))
@@ -167,78 +163,66 @@ class RulesPlugin(Star):
     async def tool_forbidden_add(
         self,
         event: AstrMessageEvent,
-        kind: str,
         content: str,
     ) -> str:
-        """给本群新增违禁触发词或违禁样本。只在管理员明确要求新增时调用。
-        写操作直接执行，不要再向管理员确认。最终回复要如实保留工具返回的类型和内容。
+        """新增一条全局违禁触发词。只在管理员明确要求新增触发词时调用。
+        写操作直接执行，不要再向管理员确认。最终回复要如实保留工具返回的内容。
+        违禁样本不走这个工具，请让管理员去 WebUI 填写。
 
         Args:
-            kind(string): 只能是“触发词”或“违禁样本”
-            content(string): 要新增的完整内容
+            content(string): 要新增的完整触发词
         """
         group_id = _group_id_of(event)
-        # 群号只信当前会话，不接受模型传入目标群。
+        # 只允许在群会话里改全局触发词，避免私聊误操作。
         if not group_id:
             return "这个功能只能在群里用。"
-        return await add_item(self.forbidden, event, group_id, kind, content)
+        return await add_item(self.forbidden, event, content)
 
     @filter.llm_tool(name="forbidden_update")
     async def tool_forbidden_update(
         self,
         event: AstrMessageEvent,
-        kind: str,
         old_content: str,
         new_content: str,
     ) -> str:
-        """修改本群已有的违禁触发词或违禁样本，不存在时不会新增。
+        """修改一条已有的全局违禁触发词，不存在时不会新增。
         写操作直接执行，不要再向管理员确认。最终回复要如实保留修改前后的内容。
 
         Args:
-            kind(string): 只能是“触发词”或“违禁样本”
-            old_content(string): 数据库中现有的完整内容
-            new_content(string): 修改后的完整内容
+            old_content(string): 数据库中现有的完整触发词
+            new_content(string): 修改后的完整触发词
         """
         group_id = _group_id_of(event)
-        # 群号只信当前会话，不接受模型传入目标群。
+        # 只允许在群会话里改全局触发词，避免私聊误操作。
         if not group_id:
             return "这个功能只能在群里用。"
-        return await update_item(
-            self.forbidden,
-            event,
-            group_id,
-            kind,
-            old_content,
-            new_content,
-        )
+        return await update_item(self.forbidden, event, old_content, new_content)
 
     @filter.llm_tool(name="forbidden_delete")
     async def tool_forbidden_delete(
         self,
         event: AstrMessageEvent,
-        kind: str,
         content: str,
     ) -> str:
-        """删除本群一条违禁触发词或违禁样本。最终回复只转达工具结果。
+        """删除一条全局违禁触发词。最终回复只转达工具结果。
 
         Args:
-            kind(string): 只能是“触发词”或“违禁样本”
-            content(string): 要删除的完整内容
+            content(string): 要删除的完整触发词
         """
         group_id = _group_id_of(event)
-        # 群号只信当前会话，不接受模型传入目标群。
+        # 只允许在群会话里改全局触发词，避免私聊误操作。
         if not group_id:
             return "这个功能只能在群里用。"
-        return await delete_item(self.forbidden, event, group_id, kind, content)
+        return await delete_item(self.forbidden, event, content)
 
     @filter.llm_tool(name="forbidden_list")
     async def tool_forbidden_list(self, event: AstrMessageEvent) -> str:
-        """列出本群数据库中的违禁触发词和违禁样本。结果必须如实转达。"""
+        """列出全局违禁触发词。结果必须如实转达。"""
         group_id = _group_id_of(event)
-        # 群号只信当前会话，不接受模型传入目标群。
+        # 只允许在群会话里查看全局触发词。
         if not group_id:
             return "这个功能只能在群里用。"
-        return list_items(self.forbidden, event, group_id)
+        return list_items(self.forbidden, event)
 
     @filter.llm_tool(name="keyword_add")
     async def tool_keyword_add(

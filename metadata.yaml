@@ -1,9 +1,9 @@
 name: astrbot_plugin_w1ndys_rules
 display_name: 群规
-short_desc: 按群管理关键词回复和违禁规则，违禁判断仅在触发后调用模型
+short_desc: 按群管理关键词回复，违禁触发词全局共用，判断仅在触发后调用模型
 desc: |
   AstrBot 插件：群里的固定规则。关键词回复由代码确定性匹配；违禁词先由代码
-  匹配本群触发词，命中后才让当前模型按固定准则和本群样本回答是或否。
+  匹配全局触发词，命中后才让当前模型按固定准则和 WebUI 样本回答是或否。
 
   目标平台是 NapCat / Lagrange / LLOneBot 等 OneBot v11 协议端。
 
@@ -16,15 +16,15 @@ desc: |
 
   违禁词：
   - 管理员在群里发 违禁词 开 / 违禁词 关，不用带唤醒前缀；
-  - 触发词和违禁样本按群存入 SQLite，通过 Agent 自然语言工具增删改查；
-  - 判断准则、提醒文案、禁言时间和飞书 Webhook 仍由 WebUI 配置；
+  - 触发词全局存入 SQLite，在群里用自然语言增删改查，对所有群生效；
+  - 判断准则、违禁样本、提醒文案、禁言时间和飞书 Webhook 由 WebUI 配置；
   - 只有代码命中触发词且模型整句回答是，才撤回、禁言并提醒。
 
   注意：关键词不能以唤醒前缀开头。AstrBot 会把唤醒前缀从消息开头剥掉，
   这类关键词永远匹配不到，写入时会被拦下并说明原因。
 
   欢迎语和其它群规能力仍在开发中。
-version: 0.4.0
+version: 0.4.1
 author: w1ndys
 repo: https://github.com/w1ndys/astrbot_plugin_w1ndys_rules
 astrbot_version: ">=4.13"

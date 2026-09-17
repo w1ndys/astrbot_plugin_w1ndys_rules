@@ -25,7 +25,7 @@ async def handle_forbidden_message(
     # 本群没开违禁词，后面的关键词回复还要继续
     if not switches.is_on(group_id, FEATURE_FORBIDDEN):
         return False, ""
-    plan = plan_forbidden_test(config, store, group_id, text)
+    plan = plan_forbidden_test(config, store, text)
     # 空文本、没触发词、没设定，都按正式路径一样不送模型
     if plan.status != "ready":
         return False, ""

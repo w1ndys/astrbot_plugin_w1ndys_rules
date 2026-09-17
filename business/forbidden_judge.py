@@ -4,7 +4,8 @@
 from ..data.forbidden_store import ForbiddenStore
 from ..entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_CFG_SAMPLES,
+    FORBIDDEN_GLOBAL_SCOPE,
     FORBIDDEN_KIND_TRIGGER,
 )
 from .forbidden_match import find_trigger
@@ -70,29 +71,28 @@ def build_system_prompt(samples: str, guideline: str) -> str:
 def plan_forbidden_test(
     config: object,
     store: ForbiddenStore,
-    group_id: str,
     text: str,
 ) -> ForbiddenTestPlan:
-    """按本群数据库配置决定测试要不要送模型。不调用模型，不处置。"""
+    """按全局触发词和 WebUI 样本决定测试要不要送模型。不调用模型，不处置。"""
     payload = text.strip()
     # 空文本测不了
     if not payload:
         return ForbiddenTestPlan("error", "请填写要测的文本。")
-    words = store.list_contents(group_id, FORBIDDEN_KIND_TRIGGER)
-    # 本群数据库没有触发词就永远不会进模型。
+    words = store.list_contents(FORBIDDEN_GLOBAL_SCOPE, FORBIDDEN_KIND_TRIGGER)
+    # 全局没有触发词就永远不会进模型。
     if not words:
-        return ForbiddenTestPlan("error", "请先给本群添加违禁触发词。")
+        return ForbiddenTestPlan("error", "请先添加违禁触发词。")
     trigger = find_trigger(payload, words)
     # 没命中触发词，按正式路径一样不送模型
     if not trigger:
         return ForbiddenTestPlan("skip", "未命中触发词，不会送模型。")
-    samples = "\n".join(store.list_contents(group_id, FORBIDDEN_KIND_SAMPLE))
+    samples = config_text(config, FORBIDDEN_CFG_SAMPLES)
     guideline = config_text(config, FORBIDDEN_CFG_GUIDELINE)
-    # WebUI 判断准则和本群数据库样本都为空时，模型没有判断依据。
+    # 判断准则和样本都为空时，模型没有判断依据。
     if not samples.strip() and not guideline.strip():
         return ForbiddenTestPlan(
             "error",
-            "请先填写 WebUI 判断准则，或给本群添加违禁样本。",
+            "请先填写 WebUI 判断准则或违禁样本。",
             trigger,
         )
     return ForbiddenTestPlan(

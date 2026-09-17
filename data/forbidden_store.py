@@ -1,4 +1,4 @@
-# 数据层：违禁触发词和违禁样本的 SQLite 存取。
+# 数据层：违禁触发词的 SQLite 存取。表仍按 group_id+kind 存，业务层用全局作用域。
 
 import asyncio
 import sqlite3
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS forbidden_item (
 
 
 class ForbiddenStore:
-    """按群和类型保存可重复配置，内存快照供群消息热路径读取。"""
+    """按作用域和类型保存配置，内存快照供群消息热路径读取。"""
 
     def __init__(self, db_path: Path) -> None:
         """建表并加载内存快照。"""

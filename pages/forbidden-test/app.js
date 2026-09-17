@@ -1,5 +1,4 @@
 const bridge = window.AstrBotPluginPage;
-const groupIdBox = document.getElementById("group-id");
 const textBox = document.getElementById("text");
 const runButton = document.getElementById("run");
 const output = document.getElementById("output");
@@ -28,7 +27,6 @@ async function runTest() {
   show("测试中…");
   try {
     const result = await bridge.apiPost("forbidden/test", {
-      group_id: groupIdBox.value,
       text: textBox.value,
     });
     show(formatResult(result));

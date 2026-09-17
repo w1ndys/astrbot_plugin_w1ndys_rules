@@ -1,4 +1,4 @@
-# 违禁词测试链路：数据库触发词门槛、数据库样本、是/否解析。不发 QQ，不处置。
+# 违禁词测试链路：全局触发词门槛、WebUI 样本、是/否解析。不发 QQ，不处置。
 
 import sys
 import unittest
@@ -17,7 +17,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_judge import (
 )
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_KIND_TRIGGER,
 )
 
@@ -25,17 +25,14 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
 class FakeForbiddenStore:
     """按类型返回测试预设的数据库内容。"""
 
-    def __init__(self, triggers=None, samples=None) -> None:
-        """保存本群测试用的触发词和样本。"""
+    def __init__(self, triggers=None) -> None:
+        """保存测试用的全局触发词。"""
         self.triggers = triggers or []
-        self.samples = samples or []
 
     def list_contents(self, group_id: str, kind: str) -> list[str]:
-        """返回指定类型的内容，群号由调用路径负责传入。"""
+        """只在读取触发词时返回预设列表。"""
         if kind == FORBIDDEN_KIND_TRIGGER:
             return self.triggers
-        if kind == FORBIDDEN_KIND_SAMPLE:
-            return self.samples
         return []
 
 
@@ -64,15 +61,14 @@ class FakeResponse:
 
 
 class ForbiddenJudgeTest(unittest.TestCase):
-    """验证数据库规则如何组成违禁判断计划。"""
+    """验证全局触发词和 WebUI 配置如何组成违禁判断计划。"""
 
     def setUp(self) -> None:
-        self.config = {FORBIDDEN_CFG_GUIDELINE: "广告引流算违禁。"}
-        self.store = FakeForbiddenStore(
-            ["广告", "加群"],
-            ["卖课私聊我 -> 是", "今天天气真好 -> 否"],
-        )
-        self.group_id = "123"
+        self.config = {
+            FORBIDDEN_CFG_GUIDELINE: "广告引流算违禁。",
+            FORBIDDEN_CFG_SAMPLES: "卖课私聊我 -> 是\n今天天气真好 -> 否",
+        }
+        self.store = FakeForbiddenStore(["广告", "加群"])
 
     def test_parse_yes_no_strict(self) -> None:
         self.assertEqual(parse_yes_no("是"), "yes")
@@ -83,30 +79,23 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertEqual(parse_yes_no(""), "fail")
 
     def test_empty_text(self) -> None:
-        plan = plan_forbidden_test(self.config, self.store, self.group_id, "   ")
+        plan = plan_forbidden_test(self.config, self.store, "   ")
         self.assertEqual(plan.status, "error")
         self.assertIn("请填写", plan.message)
 
     def test_no_trigger_words(self) -> None:
-        plan = plan_forbidden_test(
-            self.config,
-            FakeForbiddenStore(),
-            self.group_id,
-            "广告来了",
-        )
+        plan = plan_forbidden_test(self.config, FakeForbiddenStore(), "广告来了")
         self.assertEqual(plan.status, "error")
         self.assertIn("触发词", plan.message)
 
     def test_skip_without_trigger(self) -> None:
-        plan = plan_forbidden_test(
-            self.config, self.store, self.group_id, "今天天气不错"
-        )
+        plan = plan_forbidden_test(self.config, self.store, "今天天气不错")
         self.assertEqual(plan.status, "skip")
         self.assertEqual(plan.trigger, "")
         self.assertEqual(plan.system, "")
 
     def test_ready_when_triggered(self) -> None:
-        plan = plan_forbidden_test(self.config, self.store, self.group_id, "这里有广告")
+        plan = plan_forbidden_test(self.config, self.store, "这里有广告")
         self.assertEqual(plan.status, "ready")
         self.assertEqual(plan.trigger, "广告")
         self.assertEqual(plan.user, "这里有广告")
@@ -115,18 +104,13 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertIn("只回答「是」或「否」", plan.system)
 
     def test_error_when_no_rule(self) -> None:
-        plan = plan_forbidden_test(
-            {},
-            FakeForbiddenStore(["广告"]),
-            self.group_id,
-            "这里有广告",
-        )
+        plan = plan_forbidden_test({}, FakeForbiddenStore(["广告"]), "这里有广告")
         self.assertEqual(plan.status, "error")
         self.assertEqual(plan.trigger, "广告")
         self.assertIn("违禁", plan.message)
 
     def test_payload_hides_prompt_and_webhook(self) -> None:
-        plan = plan_forbidden_test(self.config, self.store, self.group_id, "这里有广告")
+        plan = plan_forbidden_test(self.config, self.store, "这里有广告")
         payload = test_result_payload(plan, "yes")
         self.assertEqual(payload["status"], "yes")
         self.assertEqual(payload["trigger"], "广告")
@@ -137,9 +121,7 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertNotIn("https://", blob)
 
     def test_payload_skip_keeps_message(self) -> None:
-        plan = plan_forbidden_test(
-            self.config, self.store, self.group_id, "今天天气不错"
-        )
+        plan = plan_forbidden_test(self.config, self.store, "今天天气不错")
         payload = test_result_payload(plan, "skip")
         self.assertEqual(payload["status"], "skip")
         self.assertIn("未命中", payload["message"])

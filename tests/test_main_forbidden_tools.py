@@ -103,22 +103,25 @@ class ForbiddenToolEntryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_tools_complete_crud_in_current_group(self) -> None:
         """新增、查询、修改、删除形成完整工具闭环。"""
-        added = await self.plugin.tool_forbidden_add(self.event, "触发词", "广告")
+        added = await self.plugin.tool_forbidden_add(self.event, "广告")
         listed = await self.plugin.tool_forbidden_list(self.event)
-        updated = await self.plugin.tool_forbidden_update(
-            self.event, "触发词", "广告", "推广"
-        )
-        deleted = await self.plugin.tool_forbidden_delete(self.event, "触发词", "推广")
+        updated = await self.plugin.tool_forbidden_update(self.event, "广告", "推广")
+        deleted = await self.plugin.tool_forbidden_delete(self.event, "推广")
 
         self.assertEqual(added, "已添加违禁触发词「广告」。")
         self.assertIn("「广告」", listed)
         self.assertEqual(updated, "已将违禁触发词「广告」修改为「推广」。")
         self.assertEqual(deleted, "已删除违禁触发词「推广」。")
 
+    async def test_triggers_are_global_across_groups(self) -> None:
+        """在 A 群添加的触发词，B 群查询也能看到。"""
+        await self.plugin.tool_forbidden_add(FakeEvent(group_id="111"), "广告")
+        listed = await self.plugin.tool_forbidden_list(FakeEvent(group_id="222"))
+
+        self.assertIn("「广告」", listed)
+
     async def test_private_chat_cannot_select_group(self) -> None:
-        """没有当前群号时不能让模型通过参数指定别的群。"""
-        message = await self.plugin.tool_forbidden_add(
-            FakeEvent(group_id=""), "触发词", "广告"
-        )
+        """没有当前群号时不能改全局触发词。"""
+        message = await self.plugin.tool_forbidden_add(FakeEvent(group_id=""), "广告")
 
         self.assertEqual(message, "这个功能只能在群里用。")

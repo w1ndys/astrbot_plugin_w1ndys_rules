@@ -23,21 +23,19 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
-    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_KIND_TRIGGER,
     MAX_FORBIDDEN_MUTE_SECONDS,
 )
 
 
 class FakeForbiddenStore:
-    """给正式群消息路径提供本群数据库规则。"""
+    """给正式群消息路径提供全局触发词。"""
 
     def list_contents(self, group_id: str, kind: str) -> list[str]:
-        """返回固定触发词和样本。"""
+        """返回固定触发词。"""
         if kind == FORBIDDEN_KIND_TRIGGER:
             return ["广告"]
-        if kind == FORBIDDEN_KIND_SAMPLE:
-            return ["卖课 -> 是"]
         return []
 
 
@@ -102,6 +100,7 @@ class FakeReply:
 def ready_config(**extra) -> dict:
     data = {
         FORBIDDEN_CFG_GUIDELINE: "广告算违禁。",
+        FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
         FORBIDDEN_CFG_MUTE_SECONDS: 60,
         FORBIDDEN_CFG_REMIND_TEXT: "请不要发广告。",
         FORBIDDEN_CFG_FEISHU_WEBHOOK: "https://example.com/hook",

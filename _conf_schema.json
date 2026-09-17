@@ -3,7 +3,13 @@
     "description": "违禁长什么样",
     "type": "string",
     "default": "",
-    "hint": "用自然语言说明什么样的消息算违禁。大模型按这份设定判断。"
+    "hint": "用一段话说明什么样的消息算违禁、什么样的不算。大模型按这份设定判断。"
+  },
+  "forbidden_samples": {
+    "description": "违禁样本",
+    "type": "text",
+    "default": "",
+    "hint": "给模型看的判断样本，可换行。建议每行一条，违禁写「…… -> 是」，正常聊天写「…… -> 否」。"
   },
   "forbidden_mute_seconds": {
     "description": "禁言秒数",
