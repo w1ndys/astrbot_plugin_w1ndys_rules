@@ -94,7 +94,7 @@ class KeywordBatchTest(unittest.IsolatedAsyncioTestCase):
             self.group_id,
             "关键词 批量\n原神|好玩",
         )
-        self.assertEqual(text, "只有 AstrBot 管理员能管理本群的关键词回复。")
+        self.assertEqual(text, "只有机器人的管理员能管理本群的关键词回复")
         self.assertEqual(self.store.find_reply(self.group_id, "原神"), "")
 
     async def test_adds_new_rules(self) -> None:

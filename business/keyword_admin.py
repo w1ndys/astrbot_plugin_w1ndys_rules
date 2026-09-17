@@ -16,7 +16,7 @@ from .auth import is_admin
 from .wake_prefix import prefixes
 
 # 非管理员统一回这句话，不透露本群到底配了什么。“管理”同时盖住查看和修改
-REJECT_MESSAGE = "只有 AstrBot 管理员能管理本群的关键词回复。"
+REJECT_MESSAGE = "只有机器人的管理员能管理本群的关键词回复"
 
 
 def check_keyword(context: object, keyword: str) -> tuple[str, str]:

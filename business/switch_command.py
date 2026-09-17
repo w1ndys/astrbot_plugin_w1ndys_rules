@@ -26,7 +26,7 @@ async def run_switch_command(
     """执行一次开关命令，返回发到群里的文本。"""
     # 只有 AstrBot 管理员能改本群开关，其余人一律拒绝
     if not is_admin(event):
-        return f"只有 AstrBot 管理员能改本群的{label}开关。"
+        return f"只有机器人的管理员能改本群的{label}开关"
     await switches.set_on(group_id, feature, enabled)
     # 反向指令也不带前缀，和管理员日常用法一致
     if enabled:

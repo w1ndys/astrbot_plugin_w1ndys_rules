@@ -9,7 +9,7 @@ from ..entity.constants import (
 )
 from .auth import is_admin
 
-REJECT_MESSAGE = "只有 AstrBot 管理员能管理违禁触发词。"
+REJECT_MESSAGE = "只有机器人的管理员能管理违禁触发词"
 TRIGGER_LABEL = "违禁触发词"
 
 
