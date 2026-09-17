@@ -1,7 +1,7 @@
 # 入口层：向 AstrBot 注册群消息监听、关键词/违禁配置工具，以及违禁词测试页。
 #
-# 群员命中关键词、管理员开/关/批量，都由代码直接回复，不经过模型；回复完拦住事件，
-# 模型不会再在后面补一句。开、关、批量不走指令过滤器，所以不需要唤醒前缀。
+# 群员命中关键词、管理员开/关/批量/欢迎语设查，都由代码直接回复，不经过模型；回复完拦住事件，
+# 模型不会再在后面补一句。这些命令不走指令过滤器，所以不需要唤醒前缀。
 # 违禁词测试只走插件 Pages，不经 QQ，也不撤回、禁言、发飞书。
 #
 # 匹配用的是 AstrBot 解析出来的纯文本 event.message_str，不是 OneBot 原始
@@ -38,11 +38,12 @@ from .business.keyword_admin import add_rule, delete_rule, list_rules, update_ru
 from .business.keyword_reply import pick_reply
 from .data.forbidden_store import ForbiddenStore
 from .data.keyword_store import KeywordStore
+from .data.welcome_store import WelcomeStore
 from .entity.constants import DB_FILE_NAME, PLUGIN_NAME
 
 
 class RulesPlugin(Star):
-    """AstrBot 群规插件。这一版只做关键词回复，后续加违禁词、欢迎语等。"""
+    """AstrBot 群规插件。关键词、违禁词、欢迎语开/关和文案由本插件处理。"""
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
@@ -51,6 +52,7 @@ class RulesPlugin(Star):
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
         self.forbidden = ForbiddenStore(db_path)
+        self.welcome = WelcomeStore(db_path)
         self.switches = GroupSwitchStore(db_path)
         self._register_forbidden_page()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
@@ -124,6 +126,7 @@ class RulesPlugin(Star):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             event,
             group_id,
             text,

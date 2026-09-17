@@ -7,8 +7,11 @@ from ..entity.constants import (
     CMD_FORBIDDEN_ON,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    CMD_WELCOME_OFF,
+    CMD_WELCOME_ON,
     FEATURE_FORBIDDEN,
     FEATURE_KEYWORD,
+    FEATURE_WELCOME,
 )
 from .auth import is_admin
 
@@ -63,4 +66,20 @@ async def run_forbidden_switch(
         CMD_FORBIDDEN_ON,
         CMD_FORBIDDEN_OFF,
         "违禁词",
+    )
+
+
+async def run_welcome_switch(
+    switches: GroupSwitchStore, event: object, group_id: str, enabled: bool
+) -> str:
+    """开或关本群的欢迎语。本刀只改开关，入群发送下一刀再接。"""
+    return await run_switch_command(
+        switches,
+        event,
+        group_id,
+        enabled,
+        FEATURE_WELCOME,
+        CMD_WELCOME_ON,
+        CMD_WELCOME_OFF,
+        "欢迎语",
     )

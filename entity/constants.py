@@ -35,6 +35,14 @@ CMD_KEYWORD_OFF = "关键词 关"
 CMD_KEYWORD_BATCH = "关键词 批量"
 CMD_FORBIDDEN_ON = "违禁词 开"
 CMD_FORBIDDEN_OFF = "违禁词 关"
+CMD_WELCOME_ON = "欢迎语 开"
+CMD_WELCOME_OFF = "欢迎语 关"
+CMD_WELCOME_SET = "欢迎语 设置"
+# 整句相等才查当前文案，避免把「欢迎语 开」当成查询
+CMD_WELCOME_SHOW = "欢迎语"
+
+# 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
+WELCOME_MAX_LEN = 500
 
 # 违禁配置条目类型。触发词决定是否送模型；样本已改回 WebUI，库表仍保留 kind 字段。
 FORBIDDEN_KIND_TRIGGER = "trigger"

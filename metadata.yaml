@@ -23,8 +23,11 @@ desc: |
   注意：关键词不能以唤醒前缀开头。AstrBot 会把唤醒前缀从消息开头剥掉，
   这类关键词永远匹配不到，写入时会被拦下并说明原因。
 
-  欢迎语和其它群规能力仍在开发中。
-version: 0.4.1
+  欢迎语：
+  - 管理员在群里发 欢迎语 开 / 欢迎语 关，不用带唤醒前缀；
+  - 欢迎语 设置 文案；整句发 欢迎语 查看当前文案；
+  - 本版只保存开关和文案，入群时还不会自动发送。
+version: 0.4.2
 author: w1ndys
 repo: https://github.com/w1ndys/astrbot_plugin_w1ndys_rules
 astrbot_version: ">=4.13"

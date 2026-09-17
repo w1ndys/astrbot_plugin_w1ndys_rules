@@ -17,14 +17,20 @@ from astrbot_plugin_w1ndys_rules.business.admin_command import (
     parse_admin_command,
 )
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
+from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CMD_FORBIDDEN_OFF,
     CMD_FORBIDDEN_ON,
     CMD_KEYWORD_BATCH,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
+    CMD_WELCOME_OFF,
+    CMD_WELCOME_ON,
+    CMD_WELCOME_SET,
+    CMD_WELCOME_SHOW,
     FEATURE_FORBIDDEN,
     FEATURE_KEYWORD,
+    FEATURE_WELCOME,
 )
 
 
@@ -60,6 +66,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         db_path = Path(self._tmp.name) / "rules.db"
         self.keywords = KeywordStore(db_path)
         self.switches = GroupSwitchStore(db_path)
+        self.welcome = WelcomeStore(db_path)
         self.context = FakeContext(["卷卷", "/"])
         self.group_id = "123456"
 
@@ -89,6 +96,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             FakeEvent(admin=True),
             self.group_id,
             CMD_KEYWORD_ON,
@@ -104,6 +112,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             FakeEvent(admin=True),
             self.group_id,
             CMD_FORBIDDEN_ON,
@@ -119,6 +128,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             FakeEvent(admin=False),
             self.group_id,
             CMD_KEYWORD_ON,
@@ -131,6 +141,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             FakeEvent(admin=False),
             self.group_id,
             CMD_FORBIDDEN_ON,
@@ -144,9 +155,78 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             self.keywords,
             self.switches,
+            self.welcome,
             FakeEvent(admin=True),
             self.group_id,
             "原神",
         )
         self.assertFalse(handled)
         self.assertEqual(reply, "")
+
+    def test_parse_welcome_on_off_and_show_must_be_exact(self) -> None:
+        self.assertEqual(parse_admin_command(CMD_WELCOME_ON), "welcome_on")
+        self.assertEqual(parse_admin_command(CMD_WELCOME_OFF), "welcome_off")
+        self.assertEqual(parse_admin_command(CMD_WELCOME_SHOW), "welcome_show")
+        self.assertEqual(parse_admin_command("欢迎语 开 吧"), "")
+        self.assertEqual(parse_admin_command("欢迎语设置"), "")
+
+    def test_parse_welcome_set_header(self) -> None:
+        self.assertEqual(parse_admin_command(CMD_WELCOME_SET), "welcome_set")
+        self.assertEqual(parse_admin_command("欢迎语 设置 欢迎入群~"), "welcome_set")
+        self.assertEqual(parse_admin_command("欢迎语 设置\n欢迎入群~"), "welcome_set")
+        self.assertEqual(parse_admin_command("欢迎语 设置导入"), "")
+
+    async def test_welcome_on_does_not_enable_keyword(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=True),
+            self.group_id,
+            CMD_WELCOME_ON,
+        )
+        self.assertTrue(handled)
+        self.assertIn("已开启本群的欢迎语", reply)
+        self.assertIn(CMD_WELCOME_OFF, reply)
+        self.assertTrue(self.switches.is_on(self.group_id, FEATURE_WELCOME))
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_KEYWORD))
+
+    async def test_welcome_set_and_show(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=True),
+            self.group_id,
+            "欢迎语 设置 欢迎入群~",
+        )
+        self.assertTrue(handled)
+        self.assertIn("已设置本群欢迎语", reply)
+        self.assertIn("欢迎入群~", reply)
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=True),
+            self.group_id,
+            CMD_WELCOME_SHOW,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "本群欢迎语：\n欢迎入群~")
+
+    async def test_welcome_non_admin_is_silent(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=False),
+            self.group_id,
+            CMD_WELCOME_ON,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "")
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_WELCOME))
