@@ -8,6 +8,7 @@ DB_FILE_NAME = "rules.db"
 FEATURE_KEYWORD = "keyword"
 FEATURE_FORBIDDEN = "forbidden"
 FEATURE_WELCOME = "welcome"
+FEATURE_VERIFY = "verify"
 
 # 旧黑名单用这个 group_id 表示全局名单，群名单用真实群号。
 BLACKLIST_GLOBAL_SCOPE = "global"
@@ -46,6 +47,8 @@ CMD_WELCOME_OFF = "欢迎语 关"
 CMD_WELCOME_SET = "欢迎语 设置"
 # 整句相等才查当前文案，避免把「欢迎语 开」当成查询
 CMD_WELCOME_SHOW = "欢迎语"
+CMD_VERIFY_ON = "入群验证 开"
+CMD_VERIFY_OFF = "入群验证 关"
 
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500
@@ -85,6 +88,11 @@ FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
+
+# 入群验证：6 位数字码；未通过发言禁言秒数走 WebUI，没填用默认，上限复用 QQ 30 天夹值。
+VERIFY_CODE_LEN = 6
+DEFAULT_VERIFY_MUTE_SECONDS = 600
+VERIFY_CFG_MUTE_SECONDS = "verify_mute_seconds"
 
 # 注册插件 Page API 时用的插件名，必须和仓库目录名一致。
 PLUGIN_NAME = "astrbot_plugin_w1ndys_rules"
