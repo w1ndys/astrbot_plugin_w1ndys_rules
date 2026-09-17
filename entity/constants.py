@@ -76,6 +76,9 @@ MAX_FORBIDDEN_MUTE_SECONDS = 2592000
 QQ_ROLE_OWNER = "owner"
 QQ_ROLE_ADMIN = "admin"
 
+# 近几天在本群发过言的人跳过违禁模型，少消耗、少误伤熟人。没记录或超窗仍送模型。
+ACTIVE_WINDOW_DAYS = 7
+
 # 插件 WebUI：准则单行，样本多行；触发词进 SQLite。
 FORBIDDEN_CFG_GUIDELINE = "forbidden_guideline"
 FORBIDDEN_CFG_SAMPLES = "forbidden_samples"

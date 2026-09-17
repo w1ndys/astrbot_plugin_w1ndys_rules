@@ -21,6 +21,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
+from .business.activity import record_speak
 from .business.admin_command import handle_admin_command
 from .business.blacklist_admin import (
     REJECT_MESSAGE as BLACKLIST_REJECT,
@@ -43,6 +44,7 @@ from .business.forbidden_judge import (
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
 from .business.welcome_send import is_group_increase, pick_welcome
+from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_store import ForbiddenStore
 from .data.keyword_store import KeywordStore
@@ -67,6 +69,7 @@ class RulesPlugin(Star):
         self.forbidden = ForbiddenStore(db_path)
         self.welcome = WelcomeStore(db_path)
         self.blacklist = BlacklistStore(db_path)
+        self.activity = ActivityStore(db_path)
         self.switches = GroupSwitchStore(db_path)
         self._register_forbidden_page()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
@@ -151,6 +154,7 @@ class RulesPlugin(Star):
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)
+            await self._note_speak(group_id, event)
             return
         handled, reply = await handle_forbidden_message(
             self.config,
@@ -160,6 +164,7 @@ class RulesPlugin(Star):
             group_id,
             text,
             self._using_provider,
+            activity=self.activity,
         )
         # 模型判定「是」后已经撤回/禁言/飞书，群提醒有文案才发
         if handled:
@@ -167,14 +172,25 @@ class RulesPlugin(Star):
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)
+            await self._note_speak(group_id, event)
             return
         reply = pick_reply(self.keywords, self.switches, group_id, text)
+        # 先记下这次发言，再决定要不要回关键词；必须在违禁判断之后，避免第一条就被当成活跃
+        await self._note_speak(group_id, event)
         # 没命中就静默放过，让消息继续走后面的流程
         if not reply:
             return
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
         _stop_llm(event)
+
+    async def _note_speak(self, group_id: str, event: AstrMessageEvent) -> None:
+        """把这次有文本的群发言记下来，给 7 天活跃判断用。"""
+        user_id = _sender_id_of(event)
+        # 读不到 QQ 号就不要写空键
+        if not user_id:
+            return
+        await record_speak(self.activity, group_id, user_id)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
