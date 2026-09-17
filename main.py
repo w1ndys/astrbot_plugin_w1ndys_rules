@@ -22,6 +22,12 @@ from astrbot.api.star import Context, Star, StarTools
 
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.admin_command import handle_admin_command
+from .business.blacklist_admin import (
+    REJECT_MESSAGE as BLACKLIST_REJECT,
+    add_user,
+    delete_user,
+    list_users,
+)
 from .business.forbidden_admin import (
     add_item,
     delete_item,
@@ -36,10 +42,16 @@ from .business.forbidden_judge import (
 )
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
+from .data.blacklist_store import BlacklistStore
 from .data.forbidden_store import ForbiddenStore
 from .data.keyword_store import KeywordStore
 from .data.welcome_store import WelcomeStore
-from .entity.constants import DB_FILE_NAME, PLUGIN_NAME
+from .entity.constants import (
+    BLACKLIST_GLOBAL_SCOPE,
+    BLACKLIST_LIST_LIMIT,
+    DB_FILE_NAME,
+    PLUGIN_NAME,
+)
 
 
 class RulesPlugin(Star):
@@ -53,6 +65,7 @@ class RulesPlugin(Star):
         self.keywords = KeywordStore(db_path)
         self.forbidden = ForbiddenStore(db_path)
         self.welcome = WelcomeStore(db_path)
+        self.blacklist = BlacklistStore(db_path)
         self.switches = GroupSwitchStore(db_path)
         self._register_forbidden_page()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
@@ -175,11 +188,9 @@ class RulesPlugin(Star):
         Args:
             content(string): 要新增的完整触发词
         """
-        group_id = _group_id_of(event)
-        # 只允许在群会话里改全局触发词，避免私聊误操作。
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await add_item(self.forbidden, event, content)
+        return await _with_group(
+            event, lambda _gid: add_item(self.forbidden, event, content)
+        )
 
     @filter.llm_tool(name="forbidden_update")
     async def tool_forbidden_update(
@@ -195,11 +206,12 @@ class RulesPlugin(Star):
             old_content(string): 数据库中现有的完整触发词
             new_content(string): 修改后的完整触发词
         """
-        group_id = _group_id_of(event)
-        # 只允许在群会话里改全局触发词，避免私聊误操作。
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await update_item(self.forbidden, event, old_content, new_content)
+        return await _with_group(
+            event,
+            lambda _gid: update_item(
+                self.forbidden, event, old_content, new_content
+            ),
+        )
 
     @filter.llm_tool(name="forbidden_delete")
     async def tool_forbidden_delete(
@@ -212,20 +224,97 @@ class RulesPlugin(Star):
         Args:
             content(string): 要删除的完整触发词
         """
-        group_id = _group_id_of(event)
-        # 只允许在群会话里改全局触发词，避免私聊误操作。
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await delete_item(self.forbidden, event, content)
+        return await _with_group(
+            event, lambda _gid: delete_item(self.forbidden, event, content)
+        )
 
     @filter.llm_tool(name="forbidden_list")
     async def tool_forbidden_list(self, event: AstrMessageEvent) -> str:
         """列出全局违禁触发词。结果必须如实转达。"""
-        group_id = _group_id_of(event)
-        # 只允许在群会话里查看全局触发词。
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return list_items(self.forbidden, event)
+        return await _with_group(
+            event, lambda _gid: list_items(self.forbidden, event)
+        )
+
+    @filter.llm_tool(name="blacklist_add")
+    async def tool_blacklist_add(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """把一个人加入本群黑名单。只在管理员明确要求拉黑时调用。不踢人。
+        写操作直接执行。最终回复如实转达工具结果。
+
+        Args:
+            user_id(string): 要拉黑的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: add_user(self.blacklist, event, group_id, user_id),
+        )
+
+    @filter.llm_tool(name="blacklist_delete")
+    async def tool_blacklist_delete(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """从本群黑名单移除一个人。不踢人，也不改群员身份。
+
+        Args:
+            user_id(string): 要移除的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: delete_user(
+                self.blacklist, event, group_id, user_id
+            ),
+        )
+
+    @filter.llm_tool(name="blacklist_list")
+    async def tool_blacklist_list(self, event: AstrMessageEvent) -> str:
+        """列出本群黑名单。超过 30 人会发合并转发。结果必须如实转达。"""
+        return await _with_group(
+            event,
+            lambda group_id: _reply_blacklist(event, self.blacklist, group_id),
+        )
+
+    @filter.llm_tool(name="global_blacklist_add")
+    async def tool_global_blacklist_add(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """把一个人加入全局黑名单。只在管理员明确要求全局拉黑时调用。不踢人。
+
+        Args:
+            user_id(string): 要拉黑的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda _gid: add_user(
+                self.blacklist, event, BLACKLIST_GLOBAL_SCOPE, user_id
+            ),
+        )
+
+    @filter.llm_tool(name="global_blacklist_delete")
+    async def tool_global_blacklist_delete(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """从全局黑名单移除一个人。只删全局名单，不改各群名单。
+
+        Args:
+            user_id(string): 要移除的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda _gid: delete_user(
+                self.blacklist, event, BLACKLIST_GLOBAL_SCOPE, user_id
+            ),
+        )
+
+    @filter.llm_tool(name="global_blacklist_list")
+    async def tool_global_blacklist_list(self, event: AstrMessageEvent) -> str:
+        """列出全局黑名单。超过 30 人会发合并转发。结果必须如实转达。"""
+        return await _with_group(
+            event,
+            lambda _gid: _reply_blacklist(
+                event, self.blacklist, BLACKLIST_GLOBAL_SCOPE
+            ),
+        )
 
     @filter.llm_tool(name="keyword_add")
     async def tool_keyword_add(
@@ -242,12 +331,11 @@ class RulesPlugin(Star):
             keyword(string): 群员要发送的关键词，必须与整条消息完全一致；不能以唤醒前缀开头
             reply(string): 命中后机器人回复的内容
         """
-        group_id = _group_id_of(event)
-        # 私聊没有群号，规则没有生效的群
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await add_rule(
-            self.context, self.keywords, event, group_id, keyword, reply
+        return await _with_group(
+            event,
+            lambda group_id: add_rule(
+                self.context, self.keywords, event, group_id, keyword, reply
+            ),
         )
 
     @filter.llm_tool(name="keyword_update")
@@ -264,11 +352,11 @@ class RulesPlugin(Star):
             keyword(string): 要修改的关键词，必须与整条消息完全一致
             reply(string): 这条关键词新的回复内容
         """
-        group_id = _group_id_of(event)
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await update_rule(
-            self.context, self.keywords, event, group_id, keyword, reply
+        return await _with_group(
+            event,
+            lambda group_id: update_rule(
+                self.context, self.keywords, event, group_id, keyword, reply
+            ),
         )
 
     @filter.llm_tool(name="keyword_delete")
@@ -282,20 +370,37 @@ class RulesPlugin(Star):
         Args:
             keyword(string): 要删除的关键词，必须与整条消息完全一致
         """
-        group_id = _group_id_of(event)
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return await delete_rule(self.keywords, event, group_id, keyword)
+        return await _with_group(
+            event,
+            lambda group_id: delete_rule(
+                self.keywords, event, group_id, keyword
+            ),
+        )
 
     @filter.llm_tool(name="keyword_list")
     async def tool_keyword_list(self, event: AstrMessageEvent) -> str:
         """列出本群现有的关键词回复规则。管理员想知道本群配了什么时才调用。
         把结果如实转达，不要自己改写或补充。
         """
-        group_id = _group_id_of(event)
-        if not group_id:
-            return "这个功能只能在群里用。"
-        return list_rules(self.keywords, event, group_id)
+        return await _with_group(
+            event, lambda group_id: list_rules(self.keywords, event, group_id)
+        )
+
+
+ONLY_IN_GROUP = "这个功能只能在群里用。"
+
+
+async def _with_group(event: object, handler) -> str:
+    """配置类工具只能在群里用。handler 拿群号，可以同步或异步。"""
+    group_id = _group_id_of(event)
+    # 私聊没有群号，规则没有生效的群
+    if not group_id:
+        return ONLY_IN_GROUP
+    result = handler(group_id)
+    # 查询类工具直接返回字符串，写操作返回协程
+    if isinstance(result, str):
+        return result
+    return await result
 
 
 def _group_id_of(event: object) -> str:
@@ -309,6 +414,39 @@ def _group_id_of(event: object) -> str:
     if not value:
         return ""
     return str(value)
+
+
+async def _reply_blacklist(event: object, store: BlacklistStore, group_id: str) -> str:
+    """名单不超过上限时把全文交给模型；超过就发合并转发。"""
+    text = list_users(store, event, group_id)
+    # 非管理员只回报拒绝，不查人数也不发消息
+    if text == BLACKLIST_REJECT:
+        return text
+    ids = store.list_user_ids(group_id)
+    # 空名单和短名单都让模型原样转述
+    if len(ids) <= BLACKLIST_LIST_LIMIT:
+        return text
+    await _send_forward_text(event, text)
+    # 全局名单和本群名单用同一句式
+    if group_id == BLACKLIST_GLOBAL_SCOPE:
+        name = "全局黑名单"
+    else:
+        name = "本群黑名单"
+    return f"已用合并消息发出{name}，共 {len(ids)} 人。"
+
+
+async def _send_forward_text(event: object, text: str) -> None:
+    """把整份名单塞进一条合并转发。"""
+    from astrbot.api.message_components import Node, Plain
+
+    getter = getattr(event, "get_self_id", None)
+    # 读不到机器人 QQ 时用 0，合并转发仍能发出
+    if getter is None:
+        uin = "0"
+    else:
+        uin = str(getter() or "0")
+    node = Node(uin=uin, name=PLUGIN_NAME, content=[Plain(text)])
+    await event.send(event.chain_result([node]))
 
 
 def _stop_llm(event: object) -> None:

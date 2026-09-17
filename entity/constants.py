@@ -12,6 +12,9 @@ FEATURE_WELCOME = "welcome"
 # 旧黑名单用这个 group_id 表示全局名单，群名单用真实群号。
 BLACKLIST_GLOBAL_SCOPE = "global"
 
+# 列黑名单时，超过这个人数就发合并转发，避免刷屏。不超过则把全文交给模型转述。
+BLACKLIST_LIST_LIMIT = 30
+
 # 关键词长度上限。命中要求整条消息与关键词完全相等，太长没人会真的发出来，
 # 只会白占内存快照。
 KEYWORD_MAX_LEN = 100
