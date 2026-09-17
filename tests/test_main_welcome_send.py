@@ -198,3 +198,17 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         text = sent[0][1].text
         self.assertIn("请先看群规", text)
         self.assertIn(code, text)
+
+    async def test_decrease_drops_pending_silently(self) -> None:
+        await self.plugin.verify.put("123", "10001", "123456")
+        event = FakeEvent({"notice_type": "group_decrease"})
+        await self.plugin.on_group_decrease(event)
+        self.assertTrue(event.stopped)
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
+
+    async def test_decrease_ignores_plain_message(self) -> None:
+        await self.plugin.verify.put("123", "10001", "123456")
+        event = FakeEvent({"post_type": "message"})
+        await self.plugin.on_group_decrease(event)
+        self.assertFalse(event.stopped)
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")

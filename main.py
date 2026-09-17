@@ -47,6 +47,7 @@ from .business.verify_action import unmute_user
 from .business.verify_admin import pass_user, reject_user, scan_users
 from .business.verify_handle import handle_verify_message
 from .business.verify_join import compose_join_text, start_pending
+from .business.verify_leave import drop_pending, is_group_decrease
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
@@ -249,6 +250,20 @@ class RulesPlugin(Star):
             yield event.chain_result([At(qq=user_id), Plain("\n" + text)])
             return
         yield event.plain_result(text)
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_decrease(self, event: AstrMessageEvent):
+        """群成员减少：有 pending 就删行。空通知也要停 LLM。"""
+        group_id = _group_id_of(event)
+        # 拿不到群号就不是群通知
+        if not group_id:
+            return
+        # 入群、普通消息、禁言都不走退群清理
+        if not is_group_decrease(event):
+            return
+        # 退群通知没有文本，不拦住的话模型可能对空事件乱回
+        _stop_llm(event)
+        await drop_pending(self.verify, group_id, _sender_id_of(event))
 
     @filter.llm_tool(name="forbidden_add")
     async def tool_forbidden_add(
