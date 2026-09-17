@@ -29,5 +29,11 @@
     "default": "",
     "secret": true,
     "hint": "飞书自定义机器人 webhook，只填在本机 WebUI，不要写进代码仓。留空则发不出飞书通知。"
+  },
+  "verify_mute_seconds": {
+    "description": "入群验证禁言秒数",
+    "type": "int",
+    "default": 600,
+    "hint": "待验证的人发错码时禁言多久。0 表示不禁。没填时按 600 秒。超过 QQ 30 天会夹住。"
   }
 }
