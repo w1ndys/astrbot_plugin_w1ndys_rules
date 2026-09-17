@@ -121,6 +121,9 @@ class FakeEvent:
     def get_sender_id(self) -> str:
         return self.user_id
 
+    def get_self_id(self) -> str:
+        return "999"
+
     def stop_event(self) -> None:
         self.stopped = True
 
@@ -211,4 +214,32 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent({"post_type": "message"})
         await self.plugin.on_group_decrease(event)
         self.assertFalse(event.stopped)
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
+
+    async def test_admin_unmute_passes_pending(self) -> None:
+        await self.plugin.verify.put("123", "10001", "123456")
+        event = FakeEvent(
+            {
+                "notice_type": "group_ban",
+                "sub_type": "lift_ban",
+                "operator_id": "10086",
+            }
+        )
+        sent = await collect(self.plugin.on_group_unmute(event))
+        self.assertTrue(event.stopped)
+        self.assertEqual(sent, ["已通过人机验证。"])
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
+
+    async def test_bot_unmute_does_not_pass(self) -> None:
+        await self.plugin.verify.put("123", "10001", "123456")
+        event = FakeEvent(
+            {
+                "notice_type": "group_ban",
+                "sub_type": "lift_ban",
+                "operator_id": "999",
+            }
+        )
+        sent = await collect(self.plugin.on_group_unmute(event))
+        self.assertFalse(event.stopped)
+        self.assertEqual(sent, [])
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")

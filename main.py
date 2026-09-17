@@ -45,9 +45,10 @@ from .business.keyword_admin import add_rule, delete_rule, list_rules, update_ru
 from .business.keyword_reply import pick_reply
 from .business.verify_action import unmute_user
 from .business.verify_admin import pass_user, reject_user, scan_users
-from .business.verify_handle import handle_verify_message
+from .business.verify_handle import PASS_REPLY, handle_verify_message
 from .business.verify_join import compose_join_text, start_pending
 from .business.verify_leave import drop_pending, is_group_decrease
+from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
@@ -264,6 +265,24 @@ class RulesPlugin(Star):
         # 退群通知没有文本，不拦住的话模型可能对空事件乱回
         _stop_llm(event)
         await drop_pending(self.verify, group_id, _sender_id_of(event))
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_unmute(self, event: AstrMessageEvent):
+        """其他管理员解禁：待验证的人视为通过。空通知也要停 LLM。"""
+        group_id = _group_id_of(event)
+        # 拿不到群号就不是群通知
+        if not group_id:
+            return
+        # 机器人自己解禁、到期、新禁言都不算通过
+        if not is_admin_unmute(event, _self_id_of(event)):
+            return
+        # 解禁通知没有文本，不拦住的话模型可能对空事件乱回
+        _stop_llm(event)
+        dropped = await drop_pending(self.verify, group_id, _sender_id_of(event))
+        # 本来就没有 pending，不用在群里说话
+        if not dropped:
+            return
+        yield event.plain_result(PASS_REPLY)
 
     @filter.llm_tool(name="forbidden_add")
     async def tool_forbidden_add(
