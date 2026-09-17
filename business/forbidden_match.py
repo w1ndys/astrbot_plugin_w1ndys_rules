@@ -1,22 +1,7 @@
 # 业务层：违禁词触发词的包含匹配。不进大模型，不处置。
 #
-# 触发词来自 WebUI 全局配置，一行一个。消息里包含任一触发词才算命中，
-# 英文不区分大小写，中文按原文包含。
-
-
-def parse_trigger_words(raw: str) -> list[str]:
-    """把 WebUI 多行文本收成触发词列表。空行丢掉。"""
-    words: list[str] = []
-    # 没配或配成空串就没有任何触发词，后面不会误命中
-    if not raw:
-        return words
-    for line in raw.splitlines():
-        text = line.strip()
-        # 空行和纯空白不是触发词
-        if not text:
-            continue
-        words.append(text)
-    return words
+# 触发词来自本群 SQLite。消息里包含任一触发词才算命中，英文不区分大小写，
+# 中文按原文包含。
 
 
 def find_trigger(text: str, words: list[str]) -> str:

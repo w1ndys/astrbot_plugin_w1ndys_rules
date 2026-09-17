@@ -29,5 +29,5 @@ def _raw_prefixes(context: object) -> object:
         if not callable(config_getter):
             return None
         return config_getter("wake_prefix")
-    except Exception:
+    except Exception:  # noqa: BLE001 - 不同 AstrBot 版本配置接口异常类型不固定
         return None

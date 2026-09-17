@@ -1,12 +1,13 @@
 # 业务层：违禁词大模型判断的提示词和「是/否」解析。
 # 不调用 AstrBot，不处置。真正补全由入口层去做。
 
-from .forbidden_match import find_trigger, parse_trigger_words
+from ..data.forbidden_store import ForbiddenStore
 from ..entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_CFG_SAMPLES,
-    FORBIDDEN_CFG_TRIGGER_WORDS,
+    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_KIND_TRIGGER,
 )
+from .forbidden_match import find_trigger
 
 
 class ForbiddenTestPlan:
@@ -66,27 +67,32 @@ def build_system_prompt(samples: str, guideline: str) -> str:
     )
 
 
-def plan_forbidden_test(config: object, text: str) -> ForbiddenTestPlan:
-    """决定测试要不要送模型。不调用模型，不处置。"""
+def plan_forbidden_test(
+    config: object,
+    store: ForbiddenStore,
+    group_id: str,
+    text: str,
+) -> ForbiddenTestPlan:
+    """按本群数据库配置决定测试要不要送模型。不调用模型，不处置。"""
     payload = text.strip()
     # 空文本测不了
     if not payload:
         return ForbiddenTestPlan("error", "请填写要测的文本。")
-    words = parse_trigger_words(config_text(config, FORBIDDEN_CFG_TRIGGER_WORDS))
-    # 没配触发词就永远不会进模型
+    words = store.list_contents(group_id, FORBIDDEN_KIND_TRIGGER)
+    # 本群数据库没有触发词就永远不会进模型。
     if not words:
-        return ForbiddenTestPlan("error", "请先在插件配置里填写触发词。")
+        return ForbiddenTestPlan("error", "请先给本群添加违禁触发词。")
     trigger = find_trigger(payload, words)
     # 没命中触发词，按正式路径一样不送模型
     if not trigger:
         return ForbiddenTestPlan("skip", "未命中触发词，不会送模型。")
-    samples = config_text(config, FORBIDDEN_CFG_SAMPLES)
+    samples = "\n".join(store.list_contents(group_id, FORBIDDEN_KIND_SAMPLE))
     guideline = config_text(config, FORBIDDEN_CFG_GUIDELINE)
-    # 设定和样本都空，模型没有判断依据
+    # WebUI 判断准则和本群数据库样本都为空时，模型没有判断依据。
     if not samples.strip() and not guideline.strip():
         return ForbiddenTestPlan(
             "error",
-            "请先在插件配置里填写「违禁长什么样」或「违禁样本」。",
+            "请先填写 WebUI 判断准则，或给本群添加违禁样本。",
             trigger,
         )
     return ForbiddenTestPlan(
@@ -115,8 +121,7 @@ def test_result_payload(plan: ForbiddenTestPlan, verdict: str) -> dict:
         message = f"命中触发词「{plan.trigger}」，模型判定：不是违禁。"
     else:
         message = (
-            f"命中触发词「{plan.trigger}」，模型没有只回答「是」或「否」，"
-            "本轮不处置。"
+            f"命中触发词「{plan.trigger}」，模型没有只回答「是」或「否」，本轮不处置。"
         )
     return {
         "status": verdict,
@@ -133,7 +138,7 @@ async def complete_yes_no(provider: object, system: str, user: str) -> str:
         return "fail"
     try:
         resp = await chat(prompt=user, system_prompt=system)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 提供商异常类型不固定，失败时必须停止处置
         # 模型挂了也当判断失败，测试页会提示，不会处置
         return "fail"
     # 空响应按失败

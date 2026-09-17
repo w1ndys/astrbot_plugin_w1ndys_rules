@@ -1,4 +1,4 @@
-# 违禁词测试链路：触发词门槛、是/否解析、假提供商。不发 QQ，不处置。
+# 违禁词测试链路：数据库触发词门槛、数据库样本、是/否解析。不发 QQ，不处置。
 
 import sys
 import unittest
@@ -17,9 +17,26 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_judge import (
 )
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_CFG_SAMPLES,
-    FORBIDDEN_CFG_TRIGGER_WORDS,
+    FORBIDDEN_KIND_SAMPLE,
+    FORBIDDEN_KIND_TRIGGER,
 )
+
+
+class FakeForbiddenStore:
+    """按类型返回测试预设的数据库内容。"""
+
+    def __init__(self, triggers=None, samples=None) -> None:
+        """保存本群测试用的触发词和样本。"""
+        self.triggers = triggers or []
+        self.samples = samples or []
+
+    def list_contents(self, group_id: str, kind: str) -> list[str]:
+        """返回指定类型的内容，群号由调用路径负责传入。"""
+        if kind == FORBIDDEN_KIND_TRIGGER:
+            return self.triggers
+        if kind == FORBIDDEN_KIND_SAMPLE:
+            return self.samples
+        return []
 
 
 class FakeProvider:
@@ -32,25 +49,30 @@ class FakeProvider:
 
     async def text_chat(self, prompt=None, system_prompt=None, **kwargs):
         self.prompts.append((system_prompt or "", prompt or ""))
-        # 模拟提供商网络错误
+        # 模拟提供商网络错误。
         if self.error is not None:
             raise self.error
         return FakeResponse(self.text)
 
 
 class FakeResponse:
+    """模拟 AstrBot 提供商的文本响应。"""
+
     def __init__(self, completion_text: str, role: str = "assistant") -> None:
         self.completion_text = completion_text
         self.role = role
 
 
 class ForbiddenJudgeTest(unittest.TestCase):
+    """验证数据库规则如何组成违禁判断计划。"""
+
     def setUp(self) -> None:
-        self.config = {
-            FORBIDDEN_CFG_TRIGGER_WORDS: "广告\n加群",
-            FORBIDDEN_CFG_SAMPLES: "卖课私聊我 -> 是\n今天天气真好 -> 否",
-            FORBIDDEN_CFG_GUIDELINE: "广告引流算违禁。",
-        }
+        self.config = {FORBIDDEN_CFG_GUIDELINE: "广告引流算违禁。"}
+        self.store = FakeForbiddenStore(
+            ["广告", "加群"],
+            ["卖课私聊我 -> 是", "今天天气真好 -> 否"],
+        )
+        self.group_id = "123"
 
     def test_parse_yes_no_strict(self) -> None:
         self.assertEqual(parse_yes_no("是"), "yes")
@@ -61,23 +83,30 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertEqual(parse_yes_no(""), "fail")
 
     def test_empty_text(self) -> None:
-        plan = plan_forbidden_test(self.config, "   ")
+        plan = plan_forbidden_test(self.config, self.store, self.group_id, "   ")
         self.assertEqual(plan.status, "error")
         self.assertIn("请填写", plan.message)
 
     def test_no_trigger_words(self) -> None:
-        plan = plan_forbidden_test({FORBIDDEN_CFG_TRIGGER_WORDS: ""}, "广告来了")
+        plan = plan_forbidden_test(
+            self.config,
+            FakeForbiddenStore(),
+            self.group_id,
+            "广告来了",
+        )
         self.assertEqual(plan.status, "error")
         self.assertIn("触发词", plan.message)
 
     def test_skip_without_trigger(self) -> None:
-        plan = plan_forbidden_test(self.config, "今天天气不错")
+        plan = plan_forbidden_test(
+            self.config, self.store, self.group_id, "今天天气不错"
+        )
         self.assertEqual(plan.status, "skip")
         self.assertEqual(plan.trigger, "")
         self.assertEqual(plan.system, "")
 
     def test_ready_when_triggered(self) -> None:
-        plan = plan_forbidden_test(self.config, "这里有广告")
+        plan = plan_forbidden_test(self.config, self.store, self.group_id, "这里有广告")
         self.assertEqual(plan.status, "ready")
         self.assertEqual(plan.trigger, "广告")
         self.assertEqual(plan.user, "这里有广告")
@@ -87,7 +116,9 @@ class ForbiddenJudgeTest(unittest.TestCase):
 
     def test_error_when_no_rule(self) -> None:
         plan = plan_forbidden_test(
-            {FORBIDDEN_CFG_TRIGGER_WORDS: "广告"},
+            {},
+            FakeForbiddenStore(["广告"]),
+            self.group_id,
             "这里有广告",
         )
         self.assertEqual(plan.status, "error")
@@ -95,7 +126,7 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertIn("违禁", plan.message)
 
     def test_payload_hides_prompt_and_webhook(self) -> None:
-        plan = plan_forbidden_test(self.config, "这里有广告")
+        plan = plan_forbidden_test(self.config, self.store, self.group_id, "这里有广告")
         payload = test_result_payload(plan, "yes")
         self.assertEqual(payload["status"], "yes")
         self.assertEqual(payload["trigger"], "广告")
@@ -106,13 +137,17 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertNotIn("https://", blob)
 
     def test_payload_skip_keeps_message(self) -> None:
-        plan = plan_forbidden_test(self.config, "今天天气不错")
+        plan = plan_forbidden_test(
+            self.config, self.store, self.group_id, "今天天气不错"
+        )
         payload = test_result_payload(plan, "skip")
         self.assertEqual(payload["status"], "skip")
         self.assertIn("未命中", payload["message"])
 
 
 class ForbiddenCompleteTest(unittest.IsolatedAsyncioTestCase):
+    """验证提供商回答只接受严格的是或否。"""
+
     async def test_yes_and_no(self) -> None:
         yes = await complete_yes_no(FakeProvider("是"), "sys", "user")
         no = await complete_yes_no(FakeProvider("否"), "sys", "user")
@@ -136,7 +171,10 @@ class ForbiddenCompleteTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_err_role_is_fail(self) -> None:
         class Broken:
+            """模拟提供商以错误角色返回。"""
+
             async def text_chat(self, prompt=None, system_prompt=None, **kwargs):
+                """返回 role=err 的响应。"""
                 return FakeResponse("是", role="err")
 
         self.assertEqual(await complete_yes_no(Broken(), "sys", "user"), "fail")

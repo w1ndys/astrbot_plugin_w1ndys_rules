@@ -12,5 +12,5 @@ def is_admin(event: object) -> bool:
         return False
     try:
         return bool(checker())
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第三方事件实现可能抛出任意异常，权限必须默认拒绝
         return False
