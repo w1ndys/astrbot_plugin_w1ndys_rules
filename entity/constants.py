@@ -9,6 +9,9 @@ FEATURE_KEYWORD = "keyword"
 FEATURE_FORBIDDEN = "forbidden"
 FEATURE_WELCOME = "welcome"
 
+# 旧黑名单用这个 group_id 表示全局名单，群名单用真实群号。
+BLACKLIST_GLOBAL_SCOPE = "global"
+
 # 关键词长度上限。命中要求整条消息与关键词完全相等，太长没人会真的发出来，
 # 只会白占内存快照。
 KEYWORD_MAX_LEN = 100
