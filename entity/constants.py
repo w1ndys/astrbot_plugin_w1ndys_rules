@@ -63,6 +63,10 @@ DEFAULT_FORBIDDEN_MUTE_SECONDS = 60
 # QQ 单次禁言上限 30 天。超过就夹到这个值，避免协议端直接拒绝。
 MAX_FORBIDDEN_MUTE_SECONDS = 2592000
 
+# OneBot 群成员 role。只有这两个才跳过违禁检测；读不到就当普通群员。
+QQ_ROLE_OWNER = "owner"
+QQ_ROLE_ADMIN = "admin"
+
 # 插件 WebUI：准则单行，样本多行；触发词进 SQLite。
 FORBIDDEN_CFG_GUIDELINE = "forbidden_guideline"
 FORBIDDEN_CFG_SAMPLES = "forbidden_samples"

@@ -65,16 +65,19 @@ class FakeBot:
 
 
 class FakeMessage:
-    def __init__(self, message_id) -> None:
+    def __init__(self, message_id, role: str = "") -> None:
         self.message_id = message_id
+        self.raw_message = {"sender": {"role": role}}
 
 
 class FakeEvent:
-    def __init__(self, sender: str = "10001", self_id: str = "999", mid=123) -> None:
+    def __init__(
+        self, sender: str = "10001", self_id: str = "999", mid=123, role: str = ""
+    ) -> None:
         self.bot = FakeBot()
         self._sender = sender
         self._self_id = self_id
-        self.message_obj = FakeMessage(mid)
+        self.message_obj = FakeMessage(mid, role)
 
     def get_sender_id(self) -> str:
         return self._sender
@@ -86,8 +89,10 @@ class FakeEvent:
 class FakeProvider:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.calls = 0
 
     async def text_chat(self, prompt=None, system_prompt=None, **kwargs):
+        self.calls += 1
         return FakeReply(self.text)
 
 
@@ -260,6 +265,64 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         actions = [item[0] for item in event.bot.api.calls]
         self.assertEqual(actions, ["delete_msg"])
+
+    async def test_owner_skips_without_model(self) -> None:
+        event = FakeEvent(role="owner")
+        provider = FakeProvider("是")
+
+        async def get_provider():
+            return provider
+
+        handled, reply = await handle_forbidden_message(
+            ready_config(),
+            FakeForbiddenStore(),
+            FakeSwitches(True),
+            event,
+            "123",
+            "这里有广告",
+            get_provider,
+        )
+        self.assertFalse(handled)
+        self.assertEqual(reply, "")
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual(event.bot.api.calls, [])
+
+    async def test_admin_skips_without_model(self) -> None:
+        event = FakeEvent(role="admin")
+        provider = FakeProvider("是")
+
+        async def get_provider():
+            return provider
+
+        handled, reply = await handle_forbidden_message(
+            ready_config(),
+            FakeForbiddenStore(),
+            FakeSwitches(True),
+            event,
+            "123",
+            "这里有广告",
+            get_provider,
+        )
+        self.assertFalse(handled)
+        self.assertEqual(reply, "")
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual(event.bot.api.calls, [])
+
+    async def test_member_still_detects(self) -> None:
+        event = FakeEvent(role="member")
+        handled, reply = await handle_forbidden_message(
+            ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
+            FakeForbiddenStore(),
+            FakeSwitches(True),
+            event,
+            "123",
+            "这里有广告",
+            self._provider("是"),
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "请不要发广告。")
+        actions = [item[0] for item in event.bot.api.calls]
+        self.assertEqual(actions, ["delete_msg", "set_group_ban"])
 
     def _provider(self, text: str):
         async def get_provider():
