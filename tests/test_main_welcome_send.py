@@ -93,9 +93,11 @@ def install_astrbot_stubs() -> None:
 install_astrbot_stubs()
 
 from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
+from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     DEFAULT_WELCOME_TEXT,
+    FEATURE_VERIFY,
     FEATURE_WELCOME,
 )
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
@@ -142,6 +144,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         db_path = Path(self._tmp.name) / "rules.db"
         self.plugin = RulesPlugin.__new__(RulesPlugin)
         self.plugin.welcome = WelcomeStore(db_path)
+        self.plugin.verify = VerifyStore(db_path)
         self.plugin.switches = GroupSwitchStore(db_path)
 
     def tearDown(self) -> None:
@@ -175,3 +178,23 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent({"notice_type": "group_increase"})
         sent = await collect(self.plugin.on_group_increase(event))
         self.assertEqual(sent[0][1].text, "\n" + DEFAULT_WELCOME_TEXT)
+
+    async def test_increase_verify_only_sends_code(self) -> None:
+        await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
+        event = FakeEvent({"notice_type": "group_increase"})
+        sent = await collect(self.plugin.on_group_increase(event))
+        code = self.plugin.verify.get_code("123", "10001")
+        self.assertTrue(code)
+        self.assertIn(code, sent[0][1].text)
+        self.assertEqual(sent[0][0].qq, "10001")
+
+    async def test_increase_welcome_and_verify_compose(self) -> None:
+        await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
+        await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
+        await self.plugin.welcome.set_content("123", "请先看群规")
+        event = FakeEvent({"notice_type": "group_increase"})
+        sent = await collect(self.plugin.on_group_increase(event))
+        code = self.plugin.verify.get_code("123", "10001")
+        text = sent[0][1].text
+        self.assertIn("请先看群规", text)
+        self.assertIn(code, text)
