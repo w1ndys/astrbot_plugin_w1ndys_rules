@@ -50,6 +50,9 @@ CMD_WELCOME_SHOW = "欢迎语"
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500
 
+# 开了开关但还没设文案时，入群发送这句。沿用旧 GroupWelcome 的默认句。
+DEFAULT_WELCOME_TEXT = "欢迎入群~"
+
 # 违禁配置条目类型。触发词决定是否送模型；样本已改回 WebUI，库表仍保留 kind 字段。
 FORBIDDEN_KIND_TRIGGER = "trigger"
 FORBIDDEN_KIND_SAMPLE = "sample"

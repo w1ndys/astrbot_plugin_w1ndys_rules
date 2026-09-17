@@ -42,6 +42,7 @@ from .business.forbidden_judge import (
 )
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
+from .business.welcome_send import is_group_increase, pick_welcome
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_store import ForbiddenStore
 from .data.keyword_store import KeywordStore
@@ -174,6 +175,31 @@ class RulesPlugin(Star):
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
         _stop_llm(event)
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_increase(self, event: AstrMessageEvent):
+        """群成员增加：开了欢迎语就发文案。空通知也要停 LLM。"""
+        group_id = _group_id_of(event)
+        # 拿不到群号就不是群通知
+        if not group_id:
+            return
+        # 普通群消息、退群、禁言都不走欢迎语
+        if not is_group_increase(event):
+            return
+        # 入群通知没有文本，不拦住的话模型可能对空事件乱回
+        _stop_llm(event)
+        text = pick_welcome(self.welcome, self.switches, group_id)
+        # 开关关着就保持安静
+        if not text:
+            return
+        user_id = _sender_id_of(event)
+        # 有入群 QQ 号就先 @，和旧 GroupWelcome 一样
+        if user_id:
+            from astrbot.api.message_components import At, Plain
+
+            yield event.chain_result([At(qq=user_id), Plain("\n" + text)])
+            return
+        yield event.plain_result(text)
 
     @filter.llm_tool(name="forbidden_add")
     async def tool_forbidden_add(
@@ -411,6 +437,19 @@ def _group_id_of(event: object) -> str:
         return ""
     value = getter()
     # 空值统一成空串，省得调用方再判一次 None
+    if not value:
+        return ""
+    return str(value)
+
+
+def _sender_id_of(event: object) -> str:
+    """从事件里取发言人/入群人 QQ 号。没有就空串。"""
+    getter = getattr(event, "get_sender_id", None)
+    # 残缺事件没有这个方法
+    if getter is None:
+        return ""
+    value = getter()
+    # 空值统一成空串
     if not value:
         return ""
     return str(value)
