@@ -23,6 +23,7 @@ from astrbot.api.star import Context, Star, StarTools
 from ._shared.group_switch_store import GroupSwitchStore
 from .business.activity import record_speak
 from .business.admin_command import handle_admin_command
+from .business.debug_payload import inspect_payload
 from .business.blacklist_admin import (
     REJECT_MESSAGE as BLACKLIST_REJECT,
     add_user,
@@ -501,6 +502,33 @@ class RulesPlugin(Star):
         return await _with_group(
             event,
             lambda group_id: show_downline(self.invite, event, group_id, user_id),
+        )
+
+    @filter.llm_tool(name="inspect_message_payload")
+    async def tool_inspect_message_payload(
+        self,
+        event: AstrMessageEvent,
+        message_id: str = "",
+        sender: str = "",
+        keyword: str = "",
+    ) -> str:
+        """查看指定群消息的原始 OneBot payload，管理员 debug 用。
+        引用了某条消息就看那条。
+        没引用时去拉群历史：可按发送人（QQ 号或昵称）或消息里的字来找，例如「刚才张三发的那条」。
+        最近一页找不到就继续往前翻。没说是谁、也没给关键词时，看上一条。
+        只在管理员明确要求查看原始消息、卡片或 payload 时调用。
+        工具会把全文私聊发给管理员。最终回复不要把 JSON 贴到群里，只转达工具返回的那一句。
+
+        Args:
+            message_id(string): 可选。引用消息时可留空。只填数字消息 ID
+            sender(string): 可选。刚才谁发的，QQ 号或群名片/昵称
+            keyword(string): 可选。消息或卡片里包含的字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: inspect_payload(
+                event, group_id, message_id, sender, keyword
+            ),
         )
 
     @filter.llm_tool(name="keyword_add")
