@@ -113,6 +113,9 @@ class FakeApi:
 
     async def call_action(self, action: str, **kwargs):
         self.calls.append((action, kwargs))
+        # 发群消息要带回 message_id，后面撤回靠它
+        if action == "send_group_msg":
+            return {"message_id": 77}
         return {}
 
 
@@ -214,9 +217,6 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         code = self.plugin.verify.get_code("123", "10001")
         self.assertTrue(code)
         self.assertEqual(sent, [])
-        self.assertEqual(event.sent[0][0].qq, "10001")
-        self.assertIn(code, event.sent[0][1].text)
-        self.assertIn("私聊", event.sent[0][1].text)
         self.assertEqual(
             self.plugin.verify.get_prompt_message_id("123", "10001"), "77"
         )
@@ -231,6 +231,9 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
                 },
             ),
         )
+        self.assertEqual(event.bot.api.calls[1][0], "send_group_msg")
+        self.assertIn(code, str(event.bot.api.calls[1][1]["message"]))
+        self.assertIn("私聊", str(event.bot.api.calls[1][1]["message"]))
 
     async def test_increase_welcome_and_verify_are_separate(self) -> None:
         await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
@@ -241,8 +244,9 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         code = self.plugin.verify.get_code("123", "10001")
         self.assertIn("请先看群规", sent[0][1].text)
         self.assertNotIn(code, sent[0][1].text)
-        self.assertIn(code, event.sent[0][1].text)
-        self.assertNotIn("请先看群规", event.sent[0][1].text)
+        prompt = str(event.bot.api.calls[1][1]["message"])
+        self.assertIn(code, prompt)
+        self.assertNotIn("请先看群规", prompt)
 
     async def test_decrease_drops_pending_silently(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")

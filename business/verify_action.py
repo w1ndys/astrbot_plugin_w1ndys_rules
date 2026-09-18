@@ -55,6 +55,27 @@ def _self_id(event: object) -> str:
     return str(value)
 
 
+async def _call_result(event: object, action: str, **kwargs: object) -> object:
+    """调 OneBot 一个动作并回传结果。失败回 None，不往上抛。"""
+    bot = getattr(event, "bot", None)
+    # 当前事件不是 OneBot 就做不了
+    if bot is None:
+        return None
+    api = getattr(bot, "api", None)
+    # 有 bot 但没有 api 同样不能调
+    if api is None:
+        return None
+    chat = getattr(api, "call_action", None)
+    # 接口名不对就当失败
+    if not callable(chat):
+        return None
+    try:
+        return await asyncio.wait_for(chat(action, **kwargs), 15)
+    except Exception:  # noqa: BLE001 - OneBot 适配器异常类型不固定
+        # 协议失败不打断后面的群文案
+        return None
+
+
 async def _call_action(event: object, action: str, **kwargs: object) -> bool:
     """调 OneBot 一个动作。失败只返回 False，不往上抛。"""
     bot = getattr(event, "bot", None)
@@ -82,6 +103,12 @@ def message_id_from_result(result: object) -> str:
     # send 失败或测试桩没回报
     if result is None:
         return ""
+    # 有的实现直接回数字 ID
+    if isinstance(result, int):
+        # 0 不是有效消息 ID
+        if result == 0:
+            return ""
+        return str(result)
     # OneBot 常见回报是字典
     if isinstance(result, dict):
         mid = result.get("message_id")
@@ -127,18 +154,28 @@ async def send_group_plain(event: object, group_id: str, text: str) -> None:
 
 
 async def send_verify_prompt(event: object, user_id: str, text: str) -> str:
-    """发出入群验证说明，返回消息 ID。没有 send 就空串。"""
-    sender = getattr(event, "send", None)
-    # 测试桩或残缺事件发不出去
-    if not callable(sender):
+    """用 send_group_msg 发验证说明，回报里的 message_id 给撤回用。"""
+    getter = getattr(event, "get_group_id", None)
+    group_id = ""
+    # 残缺事件没有群号方法
+    if callable(getter):
+        group_id = str(getter() or "")
+    # 入群通知拿不到群号就发不出去
+    if not group_id:
         return ""
-    from astrbot.api.message_components import At, Plain
-
+    try:
+        gid = int(group_id)
+    except (TypeError, ValueError):
+        return ""
     # 有入群 QQ 就先 @，和欢迎语一样
     if user_id:
-        result = await sender(
-            event.chain_result([At(qq=user_id), Plain("\n" + text)])
-        )
+        message: object = [
+            {"type": "at", "data": {"qq": user_id}},
+            {"type": "text", "data": {"text": "\n" + text}},
+        ]
     else:
-        result = await sender(event.plain_result(text))
+        message = text
+    result = await _call_result(
+        event, "send_group_msg", group_id=gid, message=message
+    )
     return message_id_from_result(result)
