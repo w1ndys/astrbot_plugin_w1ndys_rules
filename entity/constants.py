@@ -9,6 +9,7 @@ FEATURE_KEYWORD = "keyword"
 FEATURE_FORBIDDEN = "forbidden"
 FEATURE_WELCOME = "welcome"
 FEATURE_VERIFY = "verify"
+FEATURE_INVITE = "invite"
 
 # 旧黑名单用这个 group_id 表示全局名单，群名单用真实群号。
 BLACKLIST_GLOBAL_SCOPE = "global"
@@ -49,6 +50,8 @@ CMD_WELCOME_SET = "欢迎语 设置"
 CMD_WELCOME_SHOW = "欢迎语"
 CMD_VERIFY_ON = "入群验证 开"
 CMD_VERIFY_OFF = "入群验证 关"
+CMD_INVITE_ON = "邀请树 开"
+CMD_INVITE_OFF = "邀请树 关"
 
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500

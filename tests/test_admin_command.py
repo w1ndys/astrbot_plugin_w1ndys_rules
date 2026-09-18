@@ -21,6 +21,8 @@ from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CMD_FORBIDDEN_OFF,
     CMD_FORBIDDEN_ON,
+    CMD_INVITE_OFF,
+    CMD_INVITE_ON,
     CMD_KEYWORD_BATCH,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
@@ -31,6 +33,7 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     CMD_WELCOME_SET,
     CMD_WELCOME_SHOW,
     FEATURE_FORBIDDEN,
+    FEATURE_INVITE,
     FEATURE_KEYWORD,
     FEATURE_VERIFY,
     FEATURE_WELCOME,
@@ -255,6 +258,42 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(reply, "")
         self.assertFalse(self.switches.is_on(self.group_id, FEATURE_VERIFY))
+
+    def test_parse_invite_on_off_must_be_exact(self) -> None:
+        self.assertEqual(parse_admin_command(CMD_INVITE_ON), "invite_on")
+        self.assertEqual(parse_admin_command(CMD_INVITE_OFF), "invite_off")
+        self.assertEqual(parse_admin_command("邀请树 开 吧"), "")
+        self.assertEqual(parse_admin_command("邀请树"), "")
+
+    async def test_invite_on_does_not_enable_keyword(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=True),
+            self.group_id,
+            CMD_INVITE_ON,
+        )
+        self.assertTrue(handled)
+        self.assertIn("已开启本群的邀请树", reply)
+        self.assertIn(CMD_INVITE_OFF, reply)
+        self.assertTrue(self.switches.is_on(self.group_id, FEATURE_INVITE))
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_KEYWORD))
+
+    async def test_invite_non_admin_is_silent(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.switches,
+            self.welcome,
+            FakeEvent(admin=False),
+            self.group_id,
+            CMD_INVITE_ON,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(reply, "")
+        self.assertFalse(self.switches.is_on(self.group_id, FEATURE_INVITE))
 
     async def test_welcome_non_admin_is_silent(self) -> None:
         handled, reply = await handle_admin_command(

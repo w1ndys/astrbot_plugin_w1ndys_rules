@@ -5,6 +5,8 @@ from .._shared.group_switch_store import GroupSwitchStore
 from ..entity.constants import (
     CMD_FORBIDDEN_OFF,
     CMD_FORBIDDEN_ON,
+    CMD_INVITE_OFF,
+    CMD_INVITE_ON,
     CMD_KEYWORD_OFF,
     CMD_KEYWORD_ON,
     CMD_VERIFY_OFF,
@@ -12,6 +14,7 @@ from ..entity.constants import (
     CMD_WELCOME_OFF,
     CMD_WELCOME_ON,
     FEATURE_FORBIDDEN,
+    FEATURE_INVITE,
     FEATURE_KEYWORD,
     FEATURE_VERIFY,
     FEATURE_WELCOME,
@@ -101,4 +104,20 @@ async def run_verify_switch(
         CMD_VERIFY_ON,
         CMD_VERIFY_OFF,
         "入群验证",
+    )
+
+
+async def run_invite_switch(
+    switches: GroupSwitchStore, event: object, group_id: str, enabled: bool
+) -> str:
+    """开或关本群的邀请树记录。开了之后入群才写邀请边。"""
+    return await run_switch_command(
+        switches,
+        event,
+        group_id,
+        enabled,
+        FEATURE_INVITE,
+        CMD_INVITE_ON,
+        CMD_INVITE_OFF,
+        "邀请树",
     )

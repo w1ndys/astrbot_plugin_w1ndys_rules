@@ -41,6 +41,7 @@ from .business.forbidden_judge import (
     plan_forbidden_test,
     test_result_payload,
 )
+from .business.invite_record import record_join
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
 from .business.verify_action import unmute_user
@@ -53,6 +54,7 @@ from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_store import ForbiddenStore
+from .data.invite_store import InviteStore
 from .data.keyword_store import KeywordStore
 from .data.verify_store import VerifyStore
 from .data.welcome_store import WelcomeStore
@@ -76,6 +78,7 @@ class RulesPlugin(Star):
         self.forbidden = ForbiddenStore(db_path)
         self.welcome = WelcomeStore(db_path)
         self.verify = VerifyStore(db_path)
+        self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
         self.activity = ActivityStore(db_path)
         self.switches = GroupSwitchStore(db_path)
@@ -232,6 +235,15 @@ class RulesPlugin(Star):
         # 入群通知没有文本，不拦住的话模型可能对空事件乱回
         _stop_llm(event)
         user_id = _sender_id_of(event)
+        # 开关开着才写邀请边；拿不到邀请人由业务层决定不记
+        await record_join(
+            self.invite,
+            self.switches,
+            event,
+            group_id,
+            user_id,
+            _self_id_of(event),
+        )
         welcome = pick_welcome(self.welcome, self.switches, group_id)
         verify = await start_pending(
             self.verify,

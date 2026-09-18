@@ -93,10 +93,12 @@ def install_astrbot_stubs() -> None:
 install_astrbot_stubs()
 
 from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
+from astrbot_plugin_w1ndys_rules.data.invite_store import InviteStore
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     DEFAULT_WELCOME_TEXT,
+    FEATURE_INVITE,
     FEATURE_VERIFY,
     FEATURE_WELCOME,
 )
@@ -148,6 +150,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin = RulesPlugin.__new__(RulesPlugin)
         self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
+        self.plugin.invite = InviteStore(db_path)
         self.plugin.switches = GroupSwitchStore(db_path)
 
     def tearDown(self) -> None:
@@ -243,3 +246,18 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(event.stopped)
         self.assertEqual(sent, [])
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
+
+    async def test_increase_records_invite_edge(self) -> None:
+        await self.plugin.switches.set_on("123", FEATURE_INVITE, True)
+        event = FakeEvent(
+            {
+                "notice_type": "group_increase",
+                "sub_type": "invite",
+                "operator_id": "10086",
+            }
+        )
+        await collect(self.plugin.on_group_increase(event))
+        edge = self.plugin.invite.get_edge("123", "10001")
+        self.assertIsNotNone(edge)
+        self.assertEqual(edge.inviter_id, "10086")
+        self.assertEqual(edge.sub_type, "invite")
