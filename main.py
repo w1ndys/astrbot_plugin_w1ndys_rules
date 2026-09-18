@@ -41,6 +41,7 @@ from .business.forbidden_judge import (
     plan_forbidden_test,
     test_result_payload,
 )
+from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
@@ -469,6 +470,30 @@ class RulesPlugin(Star):
         return await _with_group(
             event,
             lambda group_id: _verify_scan(self.verify, event, group_id),
+        )
+
+    @filter.llm_tool(name="invite_upline")
+    async def tool_invite_upline(self, event: AstrMessageEvent, user_id: str) -> str:
+        """查询本群某个人的上线链，从他往上追到没有邀请记录为止。结果必须如实转达。
+
+        Args:
+            user_id(string): 要查的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: show_upline(self.invite, event, group_id, user_id),
+        )
+
+    @filter.llm_tool(name="invite_downline")
+    async def tool_invite_downline(self, event: AstrMessageEvent, user_id: str) -> str:
+        """查询本群某个人的整条下线，含间接邀请。结果必须如实转达。
+
+        Args:
+            user_id(string): 要查的 QQ 号，只填数字
+        """
+        return await _with_group(
+            event,
+            lambda group_id: show_downline(self.invite, event, group_id, user_id),
         )
 
     @filter.llm_tool(name="keyword_add")

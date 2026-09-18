@@ -52,3 +52,14 @@ class InviteStoreTest(unittest.IsolatedAsyncioTestCase):
         await self.store.record("123", "10001", "10086", "invite")
         reopened = InviteStore(self.db_path)
         self.assertEqual(reopened.get_edge("123", "10001").inviter_id, "10086")
+
+    async def test_list_direct_downline(self) -> None:
+        await self.store.record("123", "10001", "10086", "invite")
+        await self.store.record("123", "10002", "10086", "invite")
+        await self.store.record("123", "10003", "10001", "invite")
+        await self.store.record("999", "10004", "10086", "invite")
+        self.assertEqual(
+            self.store.list_direct_downline("123", "10086"), ["10001", "10002"]
+        )
+        self.assertEqual(self.store.list_direct_downline("123", "10001"), ["10003"])
+        self.assertEqual(self.store.list_direct_downline("123", "20000"), [])

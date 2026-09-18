@@ -55,6 +55,20 @@ class InviteStore:
             return None
         return InviteEdge(group_id, user_id, str(row[0]), str(row[1]))
 
+    def list_direct_downline(self, group_id: str, inviter_id: str) -> list[str]:
+        """列出这个人在本群直接邀请过的 QQ 号，按号码排序。"""
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT user_id FROM invite_edge "
+                "WHERE group_id = ? AND inviter_id = ? "
+                "ORDER BY user_id",
+                (group_id, inviter_id),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [str(row[0]) for row in rows]
+
     async def record(
         self, group_id: str, user_id: str, inviter_id: str, sub_type: str
     ) -> None:
