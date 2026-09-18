@@ -75,3 +75,70 @@ async def _call_action(event: object, action: str, **kwargs: object) -> bool:
         # 协议失败不打断后面的群文案
         return False
     return True
+
+
+def message_id_from_result(result: object) -> str:
+    """从发消息回报里取出 message_id。没有就空串。"""
+    # send 失败或测试桩没回报
+    if result is None:
+        return ""
+    # OneBot 常见回报是字典
+    if isinstance(result, dict):
+        mid = result.get("message_id")
+        # 有的实现把 ID 放在 data 里
+        if mid is None or mid == "":
+            data = result.get("data")
+            # data 不是字典就当没有
+            if isinstance(data, dict):
+                mid = data.get("message_id")
+        # 还是没有
+        if mid is None or mid == "":
+            return ""
+        return str(mid)
+    mid = getattr(result, "message_id", None)
+    # 对象上也没有这个字段
+    if mid is None or mid == "":
+        return ""
+    return str(mid)
+
+
+async def recall_message_id(event: object, message_id: str) -> None:
+    """撤回指定消息。没有 ID 或不是数字就跳过。"""
+    # 入群时没记下提示消息，撤不了
+    if not message_id:
+        return
+    try:
+        parsed = int(message_id)
+    except (TypeError, ValueError):
+        return
+    await _call_action(event, "delete_msg", message_id=parsed)
+
+
+async def send_group_plain(event: object, group_id: str, text: str) -> None:
+    """往指定群发一句纯文本。群号坏了就跳过。"""
+    # 空文案不要发空消息
+    if not text:
+        return
+    try:
+        gid = int(group_id)
+    except (TypeError, ValueError):
+        return
+    await _call_action(event, "send_group_msg", group_id=gid, message=text)
+
+
+async def send_verify_prompt(event: object, user_id: str, text: str) -> str:
+    """发出入群验证说明，返回消息 ID。没有 send 就空串。"""
+    sender = getattr(event, "send", None)
+    # 测试桩或残缺事件发不出去
+    if not callable(sender):
+        return ""
+    from astrbot.api.message_components import At, Plain
+
+    # 有入群 QQ 就先 @，和欢迎语一样
+    if user_id:
+        result = await sender(
+            event.chain_result([At(qq=user_id), Plain("\n" + text)])
+        )
+    else:
+        result = await sender(event.plain_result(text))
+    return message_id_from_result(result)

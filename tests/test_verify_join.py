@@ -1,4 +1,4 @@
-# 入群验证文案：关着不建码；开了写入 pending；机器人和空 QQ 跳过；和欢迎语合成一段。
+# 入群验证文案：关着不建码；开了写入 pending；机器人和空 QQ 跳过。提示要求私聊交码。
 
 import sys
 import tempfile
@@ -13,7 +13,6 @@ if PARENT not in sys.path:
 
 from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.business.verify_join import (
-    compose_join_text,
     hint_text,
     new_code,
     start_pending,
@@ -45,21 +44,7 @@ class VerifyJoinTest(unittest.IsolatedAsyncioTestCase):
     def test_hint_contains_code(self) -> None:
         text = hint_text("123456")
         self.assertIn("123456", text)
-
-    def test_compose_empty_when_both_off(self) -> None:
-        self.assertEqual(compose_join_text("", ""), "")
-
-    def test_compose_welcome_only(self) -> None:
-        self.assertEqual(compose_join_text("欢迎入群~", ""), "欢迎入群~")
-
-    def test_compose_verify_only(self) -> None:
-        self.assertEqual(compose_join_text("", "验证码：1"), "验证码：1")
-
-    def test_compose_both(self) -> None:
-        self.assertEqual(
-            compose_join_text("欢迎入群~", "验证码：1"),
-            "欢迎入群~\n验证码：1",
-        )
+        self.assertIn("私聊", text)
 
     async def test_off_does_not_register(self) -> None:
         text = await start_pending(self.store, self.switches, "123", "10001")

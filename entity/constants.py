@@ -97,10 +97,11 @@ FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
 
-# 入群验证：6 位数字码；未通过发言禁言秒数走 WebUI，没填用默认，上限复用 QQ 30 天夹值。
+# 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6
 DEFAULT_VERIFY_MUTE_SECONDS = 600
 VERIFY_CFG_MUTE_SECONDS = "verify_mute_seconds"
+VERIFY_JOIN_MUTE_SECONDS = 2592000
 
 # 注册插件 Page API 时用的插件名，必须和仓库目录名一致。
 PLUGIN_NAME = "astrbot_plugin_w1ndys_rules"

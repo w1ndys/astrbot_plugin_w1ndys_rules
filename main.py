@@ -45,10 +45,15 @@ from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
 from .business.keyword_reply import pick_reply
-from .business.verify_action import unmute_user
+from .business.verify_action import (
+    mute_user,
+    recall_message_id,
+    send_verify_prompt,
+    unmute_user,
+)
 from .business.verify_admin import pass_user, reject_user, scan_users
-from .business.verify_handle import PASS_REPLY, handle_verify_message
-from .business.verify_join import compose_join_text, start_pending
+from .business.verify_handle import PASS_REPLY, handle_verify_private
+from .business.verify_join import start_pending
 from .business.verify_leave import drop_pending, is_group_decrease
 from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
@@ -64,6 +69,7 @@ from .entity.constants import (
     BLACKLIST_LIST_LIMIT,
     DB_FILE_NAME,
     PLUGIN_NAME,
+    VERIFY_JOIN_MUTE_SECONDS,
 )
 
 
@@ -178,7 +184,7 @@ class RulesPlugin(Star):
             self._using_provider,
             activity=self.activity,
         )
-        # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里，不能被验证失败提前 return。
+        # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里。
         if handled:
             # 提醒留空就只处置，不在群里再说话
             if reply:
@@ -186,25 +192,7 @@ class RulesPlugin(Star):
             _stop_llm(event)
             await self._note_speak(group_id, event)
             return
-        handled, reply, note = await handle_verify_message(
-            self.verify,
-            self.switches,
-            self.config,
-            event,
-            group_id,
-            _sender_id_of(event),
-            text,
-        )
-        # 待验证发言拦住后面的关键词，不再拦违禁（违禁已经走过了）
-        if handled:
-            # 通过和失败都有一句群文案
-            if reply:
-                yield event.plain_result(reply)
-            _stop_llm(event)
-            # 通过后才记活跃；失败禁言不算近 7 天发言
-            if note:
-                await self._note_speak(group_id, event)
-            return
+        # 入群验证只认私聊交码，群消息不再当交码
         reply = pick_reply(self.keywords, self.switches, group_id, text)
         # 先记下这次发言，再决定要不要回关键词；必须在违禁判断之后，避免第一条就被当成活跃
         await self._note_speak(group_id, event)
@@ -213,6 +201,21 @@ class RulesPlugin(Star):
             return
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
+        _stop_llm(event)
+
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def on_private_verify(self, event: AstrMessageEvent):
+        """私聊交码。不是待验证就放过，让别的插件和模型继续。"""
+        text = event.message_str or ""
+        handled, reply = await handle_verify_private(
+            self.verify, event, _sender_id_of(event), text
+        )
+        # 这个人没有 pending，不当验证私聊
+        if not handled:
+            return
+        # 失败回一句不对；成功不在私聊再说话
+        if reply:
+            yield event.plain_result(reply)
         _stop_llm(event)
 
     async def _note_speak(self, group_id: str, event: AstrMessageEvent) -> None:
@@ -225,7 +228,7 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
-        """群成员增加：欢迎语和入群验证合成一条。空通知也要停 LLM。"""
+        """群成员增加：欢迎语和验证说明分开发。空通知也要停 LLM。"""
         group_id = _group_id_of(event)
         # 拿不到群号就不是群通知
         if not group_id:
@@ -253,17 +256,18 @@ class RulesPlugin(Star):
             user_id,
             _self_id_of(event),
         )
-        text = compose_join_text(welcome, verify)
-        # 欢迎语和入群验证都关着就保持安静
-        if not text:
+        # 欢迎语单独发，通过后不会被撤回
+        if welcome:
+            yield _join_at_text(event, user_id, welcome)
+        # 没开验证就只发欢迎语
+        if not verify:
             return
-        # 有入群 QQ 号就先 @，和旧 GroupWelcome 一样
-        if user_id:
-            from astrbot.api.message_components import At, Plain
-
-            yield event.chain_result([At(qq=user_id), Plain("\n" + text)])
+        await mute_user(event, group_id, user_id, VERIFY_JOIN_MUTE_SECONDS)
+        mid = await send_verify_prompt(event, user_id, verify)
+        # 没拿到消息 ID 也先让人去私聊交码
+        if not mid:
             return
-        yield event.plain_result(text)
+        await self.verify.set_prompt_message_id(group_id, user_id, mid)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_decrease(self, event: AstrMessageEvent):
@@ -291,10 +295,13 @@ class RulesPlugin(Star):
             return
         # 解禁通知没有文本，不拦住的话模型可能对空事件乱回
         _stop_llm(event)
-        dropped = await drop_pending(self.verify, group_id, _sender_id_of(event))
+        user_id = _sender_id_of(event)
+        prompt_id = self.verify.get_prompt_message_id(group_id, user_id)
+        dropped = await drop_pending(self.verify, group_id, user_id)
         # 本来就没有 pending，不用在群里说话
         if not dropped:
             return
+        await recall_message_id(event, prompt_id)
         yield event.plain_result(PASS_REPLY)
 
     @filter.llm_tool(name="forbidden_add")
@@ -573,11 +580,17 @@ ONLY_IN_GROUP = "这个功能只能在群里用。"
 async def _verify_pass(
     store: VerifyStore, event: object, group_id: str, user_id: str
 ) -> str:
-    """管理员通过后解禁。没通过就不调 OneBot。"""
+    """管理员通过后解禁并撤回入群提示。没通过就不调 OneBot。"""
+    clean = user_id.strip()
+    prompt_id = ""
+    # 号码合法才去取提示 ID，乱码交给 pass_user 回报
+    if clean.isdigit():
+        prompt_id = store.get_prompt_message_id(group_id, clean)
     message, unmute = await pass_user(store, event, group_id, user_id)
     # 没删到 pending 不解禁，避免解错人
     if unmute:
         await unmute_user(event, group_id, unmute)
+        await recall_message_id(event, prompt_id)
     return message
 
 
@@ -601,8 +614,18 @@ async def _send_verify_mentions(event: object, user_ids: list[str]) -> None:
     chain: list = []
     for uid in user_ids:
         chain.append(At(qq=uid))
-    chain.append(Plain("\n请尽快在群里发送包含验证码的消息。"))
+    chain.append(Plain("\n请尽快私聊机器人发送包含验证码的消息。"))
     await sender(event.chain_result(chain))
+
+
+def _join_at_text(event: object, user_id: str, text: str):
+    """入群欢迎语用 @ 开头。没有 QQ 就只发正文。"""
+    # 有入群 QQ 号就先 @，和旧 GroupWelcome 一样
+    if user_id:
+        from astrbot.api.message_components import At, Plain
+
+        return event.chain_result([At(qq=user_id), Plain("\n" + text)])
+    return event.plain_result(text)
 
 
 async def _with_group(event: object, handler) -> str:

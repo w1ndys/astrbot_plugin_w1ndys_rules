@@ -26,6 +26,7 @@ def install_astrbot_stubs() -> None:
 
         class EventMessageType:
             GROUP_MESSAGE = "group"
+            PRIVATE_MESSAGE = "private"
 
         def event_message_type(self, _message_type):
             """返回原函数。"""
@@ -101,8 +102,23 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FEATURE_INVITE,
     FEATURE_VERIFY,
     FEATURE_WELCOME,
+    VERIFY_JOIN_MUTE_SECONDS,
 )
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
+
+
+class FakeApi:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_action(self, action: str, **kwargs):
+        self.calls.append((action, kwargs))
+        return {}
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.api = FakeApi()
 
 
 class FakeMessage:
@@ -116,6 +132,8 @@ class FakeEvent:
         self.group_id = group_id
         self.user_id = user_id
         self.stopped = False
+        self.bot = FakeBot()
+        self.sent = []
 
     def get_group_id(self) -> str:
         return self.group_id
@@ -134,6 +152,10 @@ class FakeEvent:
 
     def plain_result(self, text: str) -> str:
         return text
+
+    async def send(self, result):
+        self.sent.append(result)
+        return {"message_id": 77}
 
 
 async def collect(agen) -> list:
@@ -191,19 +213,36 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         sent = await collect(self.plugin.on_group_increase(event))
         code = self.plugin.verify.get_code("123", "10001")
         self.assertTrue(code)
-        self.assertIn(code, sent[0][1].text)
-        self.assertEqual(sent[0][0].qq, "10001")
+        self.assertEqual(sent, [])
+        self.assertEqual(event.sent[0][0].qq, "10001")
+        self.assertIn(code, event.sent[0][1].text)
+        self.assertIn("私聊", event.sent[0][1].text)
+        self.assertEqual(
+            self.plugin.verify.get_prompt_message_id("123", "10001"), "77"
+        )
+        self.assertEqual(
+            event.bot.api.calls[0],
+            (
+                "set_group_ban",
+                {
+                    "group_id": 123,
+                    "user_id": 10001,
+                    "duration": VERIFY_JOIN_MUTE_SECONDS,
+                },
+            ),
+        )
 
-    async def test_increase_welcome_and_verify_compose(self) -> None:
+    async def test_increase_welcome_and_verify_are_separate(self) -> None:
         await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
         await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
         await self.plugin.welcome.set_content("123", "请先看群规")
         event = FakeEvent({"notice_type": "group_increase"})
         sent = await collect(self.plugin.on_group_increase(event))
         code = self.plugin.verify.get_code("123", "10001")
-        text = sent[0][1].text
-        self.assertIn("请先看群规", text)
-        self.assertIn(code, text)
+        self.assertIn("请先看群规", sent[0][1].text)
+        self.assertNotIn(code, sent[0][1].text)
+        self.assertIn(code, event.sent[0][1].text)
+        self.assertNotIn("请先看群规", event.sent[0][1].text)
 
     async def test_decrease_drops_pending_silently(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")

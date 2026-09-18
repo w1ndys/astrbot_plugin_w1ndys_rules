@@ -1,5 +1,4 @@
-# 业务层：入群时要不要建 pending、验证说明怎么写、怎么和欢迎语合成一段。
-# 不发消息，不禁言，不碰 AstrBot。
+# 业务层：入群时要不要建 pending、验证说明怎么写。不发消息，不禁言，不碰 AstrBot。
 
 import random
 
@@ -19,22 +18,11 @@ def new_code(store: VerifyStore, group_id: str) -> str:
 
 
 def hint_text(code: str) -> str:
-    """跟在欢迎语后面的验证说明。必须含码本身，复制整条也能交码。"""
-    return f"请在群里发一条包含验证码的消息完成人机验证。\n验证码：{code}"
-
-
-def compose_join_text(welcome_text: str, verify_text: str) -> str:
-    """欢迎语和验证说明合成一段。两段都空就空串，入口不发。"""
-    # 两个开关都关，入群保持安静
-    if not welcome_text and not verify_text:
-        return ""
-    # 只开了欢迎语
-    if not verify_text:
-        return welcome_text
-    # 只开了入群验证
-    if not welcome_text:
-        return verify_text
-    return welcome_text + "\n" + verify_text
+    """入群验证说明。必须含码本身，复制整条私聊也能交码。"""
+    return (
+        "请私聊机器人发送包含验证码的消息完成人机验证。\n"
+        f"验证码：{code}"
+    )
 
 
 async def start_pending(

@@ -24,6 +24,7 @@ def install_astrbot_stubs() -> None:
 
         class EventMessageType:
             GROUP_MESSAGE = "group"
+            PRIVATE_MESSAGE = "private"
 
         def event_message_type(self, _message_type):
             """返回原函数。"""

@@ -77,3 +77,25 @@ class VerifyStoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reopened.get_code("123", "10001"), "123456")
         self.assertTrue(reopened.code_in_use("123", "123456"))
         self.assertEqual(reopened.list_user_ids("123"), ["10001"])
+
+    async def test_prompt_id_and_list_by_user(self) -> None:
+        await self.store.put("123", "10001", "123456")
+        await self.store.set_prompt_message_id("123", "10001", "77")
+        await self.store.put("999", "10001", "654321")
+        self.assertEqual(self.store.get_prompt_message_id("123", "10001"), "77")
+        self.assertEqual(
+            self.store.list_by_user("10001"),
+            [("123", "123456", "77"), ("999", "654321", "")],
+        )
+
+    async def test_rejoin_clears_prompt_id(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        await self.store.set_prompt_message_id("123", "10001", "77")
+        await self.store.put("123", "10001", "222222")
+        self.assertEqual(self.store.get_prompt_message_id("123", "10001"), "")
+
+    async def test_prompt_survives_reopen(self) -> None:
+        await self.store.put("123", "10001", "123456")
+        await self.store.set_prompt_message_id("123", "10001", "77")
+        reopened = VerifyStore(self.db_path)
+        self.assertEqual(reopened.get_prompt_message_id("123", "10001"), "77")

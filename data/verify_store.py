@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS verify_pending (
     user_id TEXT NOT NULL,
     code TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    prompt_message_id TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (group_id, user_id)
 )
 """
@@ -28,35 +29,56 @@ class VerifyStore:
         self._lock = asyncio.Lock()
         # 内存快照：键是 (群号, QQ)，值是验证码。没有就是已通过或从没进过。
         self._codes: dict[tuple[str, str], str] = {}
+        # 入群提示消息 ID，通过后用来撤回。没有就空串。
+        self._prompt_ids: dict[tuple[str, str], str] = {}
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._setup()
         self._load_snapshot()
 
     def _setup(self) -> None:
-        """首次启动时建表。已存在就跳过。"""
+        """首次启动时建表。旧库补 prompt_message_id 列。"""
         conn = connect(self.db_path)
         try:
             create_table(conn, CREATE_TABLE_SQL)
+            self._ensure_prompt_column(conn)
         finally:
             conn.close()
+
+    def _ensure_prompt_column(self, conn: object) -> None:
+        """旧表没有提示消息列时补上，避免读列失败。"""
+        rows = conn.execute("PRAGMA table_info(verify_pending)").fetchall()
+        names = [str(row[1]) for row in rows]
+        # 新库建表时已经有这一列
+        if "prompt_message_id" in names:
+            return
+        conn.execute(
+            "ALTER TABLE verify_pending "
+            "ADD COLUMN prompt_message_id TEXT NOT NULL DEFAULT ''"
+        )
+        conn.commit()
 
     def _load_snapshot(self) -> None:
         """把整张表读进内存。空码当没有这条，避免把人误判成待验证。"""
         conn = connect(self.db_path)
         try:
             rows = conn.execute(
-                "SELECT group_id, user_id, code FROM verify_pending"
+                "SELECT group_id, user_id, code, prompt_message_id "
+                "FROM verify_pending"
             ).fetchall()
         finally:
             conn.close()
         codes: dict[tuple[str, str], str] = {}
+        prompts: dict[tuple[str, str], str] = {}
         for row in rows:
             code = str(row[2])
             # 坏数据没有码，不能拿来判定包含匹配
             if not code:
                 continue
-            codes[(str(row[0]), str(row[1]))] = code
+            key = (str(row[0]), str(row[1]))
+            codes[key] = code
+            prompts[key] = str(row[3] or "")
         self._codes = codes
+        self._prompt_ids = prompts
 
     def get_code(self, group_id: str, user_id: str) -> str:
         """取这个人在本群的待验证码。不是 pending 返回空串。"""
@@ -65,6 +87,22 @@ class VerifyStore:
         if code is None:
             return ""
         return code
+
+    def get_prompt_message_id(self, group_id: str, user_id: str) -> str:
+        """取入群验证提示的消息 ID。没有就空串。"""
+        return self._prompt_ids.get((group_id, user_id), "")
+
+    def list_by_user(self, user_id: str) -> list[tuple[str, str, str]]:
+        """这个人所有待验证群。每项是 (群号, 码, 提示消息 ID)，按群号排。"""
+        rows: list[tuple[str, str, str]] = []
+        for (gid, uid), code in self._codes.items():
+            # 只收这个人，别的 QQ 的 pending 不参与私聊匹配
+            if uid != user_id:
+                continue
+            prompt = self._prompt_ids.get((gid, uid), "")
+            rows.append((gid, code, prompt))
+        rows.sort(key=lambda item: item[0])
+        return rows
 
     def list_user_ids(self, group_id: str) -> list[str]:
         """本群待验证 QQ 号，按号排序。只读内存，给扫描用。"""
@@ -95,16 +133,19 @@ class VerifyStore:
         conn = connect(self.db_path)
         try:
             conn.execute(
-                "INSERT INTO verify_pending(group_id, user_id, code, created_at) "
-                "VALUES (?, ?, ?, ?) "
+                "INSERT INTO verify_pending("
+                "group_id, user_id, code, created_at, prompt_message_id"
+                ") VALUES (?, ?, ?, ?, '') "
                 "ON CONFLICT(group_id, user_id) DO UPDATE SET "
-                "code = excluded.code, created_at = excluded.created_at",
+                "code = excluded.code, created_at = excluded.created_at, "
+                "prompt_message_id = ''",
                 (group_id, user_id, code, stamp),
             )
             conn.commit()
         finally:
             conn.close()
         self._codes[(group_id, user_id)] = code
+        self._prompt_ids[(group_id, user_id)] = ""
 
     async def delete(self, group_id: str, user_id: str) -> None:
         """删掉 pending。通过、拒绝、退群都走这里。本来没有也算成功。"""
@@ -123,3 +164,32 @@ class VerifyStore:
         finally:
             conn.close()
         self._codes.pop((group_id, user_id), None)
+        self._prompt_ids.pop((group_id, user_id), None)
+
+    async def set_prompt_message_id(
+        self, group_id: str, user_id: str, message_id: str
+    ) -> None:
+        """记下入群验证提示的消息 ID。没有 pending 就不写。"""
+        async with self._lock:
+            await asyncio.to_thread(
+                self._set_prompt_sync, group_id, user_id, message_id
+            )
+
+    def _set_prompt_sync(
+        self, group_id: str, user_id: str, message_id: str
+    ) -> None:
+        """同步写下提示消息 ID，给 to_thread 用。"""
+        # 没有 pending 不能只写消息 ID
+        if (group_id, user_id) not in self._codes:
+            return
+        conn = connect(self.db_path)
+        try:
+            conn.execute(
+                "UPDATE verify_pending SET prompt_message_id = ? "
+                "WHERE group_id = ? AND user_id = ?",
+                (message_id, group_id, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        self._prompt_ids[(group_id, user_id)] = message_id

@@ -1,4 +1,4 @@
-# 入口层群消息：待验证发言拦关键词；违禁必须在验证前面，避免广告漏撤。
+# 入口层：群消息不再交码；私聊交码；违禁仍在群消息里先走，避免广告漏撤。
 
 import sys
 import tempfile
@@ -26,6 +26,7 @@ def install_astrbot_stubs() -> None:
 
         class EventMessageType:
             GROUP_MESSAGE = "group"
+            PRIVATE_MESSAGE = "private"
 
         def event_message_type(self, _message_type):
             """返回原函数。"""
@@ -196,31 +197,52 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
         await self.plugin.verify.put("123", "10001", code)
 
-    async def test_fail_mutes_and_stops(self) -> None:
+    async def test_group_text_does_not_verify(self) -> None:
         await self._pending()
         event = FakeEvent("hello")
         sent = await collect(self.plugin.on_group_message(event))
-        self.assertEqual(sent, [FAIL_REPLY])
-        self.assertTrue(event.stopped)
-        self.assertEqual(
-            event.bot.api.calls[0],
-            ("set_group_ban", {"group_id": 123, "user_id": 10001, "duration": 600}),
-        )
+        self.assertEqual(sent, [])
+        self.assertEqual(event.bot.api.calls, [])
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
-        self.assertFalse(self.plugin.activity.is_within_window("123", "10001"))
 
-    async def test_pass_unmutes_and_records_speak(self) -> None:
+    async def test_group_code_does_not_pass(self) -> None:
         await self._pending()
         event = FakeEvent("123456")
         sent = await collect(self.plugin.on_group_message(event))
-        self.assertEqual(sent, [PASS_REPLY])
+        self.assertEqual(sent, [])
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
+
+    async def test_private_fail_replies_and_stops(self) -> None:
+        await self._pending()
+        event = FakeEvent("hello")
+        sent = await collect(self.plugin.on_private_verify(event))
+        self.assertEqual(sent, [FAIL_REPLY])
         self.assertTrue(event.stopped)
-        self.assertEqual(
-            event.bot.api.calls[0],
-            ("set_group_ban", {"group_id": 123, "user_id": 10001, "duration": 0}),
-        )
+        self.assertEqual(event.bot.api.calls, [])
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
+
+    async def test_private_pass_unmutes_and_notifies_group(self) -> None:
+        await self._pending()
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
+        event = FakeEvent("123456")
+        sent = await collect(self.plugin.on_private_verify(event))
+        self.assertEqual(sent, [])
+        self.assertTrue(event.stopped)
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
-        self.assertTrue(self.plugin.activity.is_within_window("123", "10001"))
+        self.assertEqual(
+            event.bot.api.calls,
+            [
+                ("delete_msg", {"message_id": 77}),
+                (
+                    "set_group_ban",
+                    {"group_id": 123, "user_id": 10001, "duration": 0},
+                ),
+                (
+                    "send_group_msg",
+                    {"group_id": 123, "message": PASS_REPLY},
+                ),
+            ],
+        )
 
     async def test_pending_ad_is_recalled_before_verify_fail(self) -> None:
         await self._pending()
