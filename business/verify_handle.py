@@ -58,7 +58,7 @@ async def handle_verify_message(
     """处理群消息里的待验证发言。
 
     返回 (已处理, 群文案, 要不要记 last_speak)。
-    已处理时入口要停 LLM，不要再走违禁和关键词。
+    已处理时入口要停 LLM，不要再走关键词。违禁必须在这之前先跑完。
     """
     action, reply, seconds = await handle_pending_speak(
         store, switches, config, group_id, user_id, text

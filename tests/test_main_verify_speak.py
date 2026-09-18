@@ -1,4 +1,4 @@
-# 入口层群消息：待验证发言拦在违禁和关键词前面。
+# 入口层群消息：待验证发言拦关键词；违禁必须在验证前面，避免广告漏撤。
 
 import sys
 import tempfile
@@ -93,7 +93,16 @@ from astrbot_plugin_w1ndys_rules.data.forbidden_store import ForbiddenStore
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
-from astrbot_plugin_w1ndys_rules.entity.constants import FEATURE_VERIFY
+from astrbot_plugin_w1ndys_rules.entity.constants import (
+    FEATURE_FORBIDDEN,
+    FEATURE_VERIFY,
+    FORBIDDEN_CFG_GUIDELINE,
+    FORBIDDEN_CFG_MUTE_SECONDS,
+    FORBIDDEN_CFG_REMIND_TEXT,
+    FORBIDDEN_CFG_SAMPLES,
+    FORBIDDEN_GLOBAL_SCOPE,
+    FORBIDDEN_KIND_TRIGGER,
+)
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
 
 
@@ -111,6 +120,29 @@ class FakeBot:
         self.api = FakeApi()
 
 
+class FakeMessage:
+    """给撤回取 message_id。没有 ID 时违禁路径会跳过撤回。"""
+
+    def __init__(self, message_id=None) -> None:
+        self.message_id = message_id
+
+
+class FakeReply:
+    def __init__(self, completion_text: str) -> None:
+        self.completion_text = completion_text
+        self.role = "assistant"
+
+
+class FakeProvider:
+    """测试用对话提供商。固定回「是」或「否」。"""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    async def text_chat(self, prompt=None, system_prompt=None, **kwargs):
+        return FakeReply(self.text)
+
+
 class FakeEvent:
     def __init__(self, text: str, group_id: str = "123", user_id: str = "10001") -> None:
         self.message_str = text
@@ -118,6 +150,7 @@ class FakeEvent:
         self.user_id = user_id
         self.stopped = False
         self.bot = FakeBot()
+        self.message_obj = FakeMessage(88)
 
     def get_group_id(self) -> str:
         return self.group_id
@@ -188,3 +221,28 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
         self.assertTrue(self.plugin.activity.is_within_window("123", "10001"))
+
+    async def test_pending_ad_is_recalled_before_verify_fail(self) -> None:
+        await self._pending()
+        await self.plugin.switches.set_on("123", FEATURE_FORBIDDEN, True)
+        await self.plugin.forbidden.add(
+            FORBIDDEN_GLOBAL_SCOPE, FORBIDDEN_KIND_TRIGGER, "勤工俭学服务中心"
+        )
+        self.plugin.config = {
+            FORBIDDEN_CFG_GUIDELINE: "广告算违禁。",
+            FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
+            FORBIDDEN_CFG_MUTE_SECONDS: 60,
+            FORBIDDEN_CFG_REMIND_TEXT: "请不要发广告。",
+        }
+
+        async def get_provider():
+            return FakeProvider("是")
+
+        self.plugin._using_provider = get_provider
+        event = FakeEvent("勤工俭学服务中心加群")
+        sent = await collect(self.plugin.on_group_message(event))
+        actions = [name for name, _kwargs in event.bot.api.calls]
+        self.assertIn("delete_msg", actions)
+        self.assertEqual(sent, ["请不要发广告。"])
+        self.assertNotIn(FAIL_REPLY, sent)
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")

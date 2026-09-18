@@ -138,7 +138,7 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
-        """群消息：管理命令、入群验证、违禁词、关键词。前三条命中后都要停 LLM。"""
+        """群消息：管理命令、违禁词、入群验证、关键词。前三条命中后都要停 LLM。"""
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
@@ -167,25 +167,6 @@ class RulesPlugin(Star):
             _stop_llm(event)
             await self._note_speak(group_id, event)
             return
-        handled, reply, note = await handle_verify_message(
-            self.verify,
-            self.switches,
-            self.config,
-            event,
-            group_id,
-            _sender_id_of(event),
-            text,
-        )
-        # 待验证发言拦住后面的违禁和关键词
-        if handled:
-            # 通过和失败都有一句群文案
-            if reply:
-                yield event.plain_result(reply)
-            _stop_llm(event)
-            # 通过后才记活跃；失败禁言不算近 7 天发言
-            if note:
-                await self._note_speak(group_id, event)
-            return
         handled, reply = await handle_forbidden_message(
             self.config,
             self.forbidden,
@@ -196,13 +177,32 @@ class RulesPlugin(Star):
             self._using_provider,
             activity=self.activity,
         )
-        # 模型判定「是」后已经撤回/禁言/飞书，群提醒有文案才发
+        # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里，不能被验证失败提前 return。
         if handled:
             # 提醒留空就只处置，不在群里再说话
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)
             await self._note_speak(group_id, event)
+            return
+        handled, reply, note = await handle_verify_message(
+            self.verify,
+            self.switches,
+            self.config,
+            event,
+            group_id,
+            _sender_id_of(event),
+            text,
+        )
+        # 待验证发言拦住后面的关键词，不再拦违禁（违禁已经走过了）
+        if handled:
+            # 通过和失败都有一句群文案
+            if reply:
+                yield event.plain_result(reply)
+            _stop_llm(event)
+            # 通过后才记活跃；失败禁言不算近 7 天发言
+            if note:
+                await self._note_speak(group_id, event)
             return
         reply = pick_reply(self.keywords, self.switches, group_id, text)
         # 先记下这次发言，再决定要不要回关键词；必须在违禁判断之后，避免第一条就被当成活跃
