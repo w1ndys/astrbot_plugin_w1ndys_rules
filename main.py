@@ -39,6 +39,7 @@ from .business.forbidden_admin import (
     update_item,
 )
 from .business.forbidden_handle import handle_forbidden_message
+from .business.group_card import handle_group_card
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
@@ -215,13 +216,22 @@ class RulesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
-        """群消息：管理命令、违禁词、入群验证、关键词。前三条命中后都要停 LLM。"""
+        """群消息：群名片拦截、管理命令、违禁词、关键词。命中后都要停 LLM。"""
         self._remember_bot(event)
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
             return
-        text = event.message_str
+        text = event.message_str or ""
+        handled, reply = await handle_group_card(self.config, event, group_id)
+        # 当前群在 WebUI 名单里时，群名片直接违规，没有正文也要拦
+        if handled:
+            # 提醒留空就只处置，不在群里再说话
+            if reply:
+                yield event.plain_result(reply)
+            _stop_llm(event)
+            await self._note_speak(group_id, event)
+            return
         # 图片、语音这类没有文本的消息没得比，直接跳过
         if not text:
             return

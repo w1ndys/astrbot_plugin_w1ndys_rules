@@ -96,6 +96,10 @@ FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
+# WebUI：要拦截群名片的群号名单。没写的群不拦。
+FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS = "forbidden_block_group_card_groups"
+# 飞书和处置日志里的触发名，不是用户正文，避免把卡片 JSON 里的签名带出去。
+GROUP_CARD_HIT = "群名片"
 
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6

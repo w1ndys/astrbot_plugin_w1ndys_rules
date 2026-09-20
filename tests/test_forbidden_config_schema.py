@@ -20,3 +20,5 @@ class ForbiddenConfigSchemaTest(unittest.TestCase):
         self.assertIn("forbidden_mute_seconds", schema)
         self.assertIn("forbidden_remind_text", schema)
         self.assertIn("forbidden_feishu_webhook", schema)
+        self.assertEqual(schema["forbidden_block_group_card_groups"]["type"], "text")
+        self.assertEqual(schema["forbidden_block_group_card_groups"]["default"], "")
