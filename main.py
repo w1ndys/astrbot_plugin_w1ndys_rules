@@ -14,6 +14,8 @@
 #
 # 本层只做「取群号 → 交给业务层 → 把文本返回」，判断与落库都在 business/。
 
+import asyncio
+import time
 from pathlib import Path
 
 from astrbot.api import logger
@@ -55,6 +57,7 @@ from .business.verify_action import (
 from .business.verify_admin import pass_user, reject_user, scan_users
 from .business.verify_handle import PASS_REPLY, handle_verify_private
 from .business.verify_join import start_pending
+from .business.verify_remind import send_due_remind
 from .business.verify_leave import drop_pending, is_group_decrease
 from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
@@ -71,6 +74,7 @@ from .entity.constants import (
     DB_FILE_NAME,
     PLUGIN_NAME,
     VERIFY_JOIN_MUTE_SECONDS,
+    VERIFY_REMIND_TICK_SECONDS,
 )
 
 
@@ -90,8 +94,73 @@ class RulesPlugin(Star):
         self.blacklist = BlacklistStore(db_path)
         self.activity = ActivityStore(db_path)
         self.switches = GroupSwitchStore(db_path)
+        # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
+        self._onebot = None
+        self._remind_task = None
+        self._start_remind_loop()
         self._register_forbidden_page()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
+
+    def _start_remind_loop(self) -> None:
+        """在当前事件循环挂一条扫 pending 的任务。没有循环就先不挂。"""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # 测试或过早加载时还没有事件循环，先不挂
+            return
+        self._remind_task = loop.create_task(self._remind_loop())
+
+    async def _remind_loop(self) -> None:
+        """约每 20 秒扫一次到期 pending。热重载时由 terminate 取消。"""
+        while True:
+            await asyncio.sleep(VERIFY_REMIND_TICK_SECONDS)
+            try:
+                await self._tick_reminds()
+            except asyncio.CancelledError:
+                # 热重载要停循环，不能吞掉取消
+                raise
+            except Exception:  # noqa: BLE001 - 单次扫失败不能把循环打死
+                # 这一拍出错，下一拍再扫，避免一人坏数据停掉全部提醒
+                continue
+
+    async def _tick_reminds(self, now_ts: int = 0) -> None:
+        """扫到期的人，发新码并撤回上一条。没有 bot 就等下次事件再记。"""
+        bot = self._onebot
+        # 还没见过任何事件，发不了群消息
+        if bot is None:
+            return
+        # 测试可以传入固定时间；线上用当前 unix 秒
+        if now_ts <= 0:
+            now_ts = int(time.time())
+        event = _BotEvent(bot)
+        for group_id, user_id in self.verify.list_due(now_ts):
+            try:
+                await send_due_remind(
+                    self.verify, event, group_id, user_id, now_ts
+                )
+            except Exception:  # noqa: BLE001 - 一个人失败不影响别人
+                # 这个人这一拍跳过，其余到期的人继续发
+                continue
+
+    def _remember_bot(self, event: object) -> None:
+        """把当前事件上的 OneBot 留下来给提醒循环用。"""
+        bot = getattr(event, "bot", None)
+        # 残缺事件没有 bot，不能覆盖已记下的
+        if bot is None:
+            return
+        self._onebot = bot
+
+    async def terminate(self) -> None:
+        """热重载或卸载时取消提醒循环，避免旧任务继续发。"""
+        task = self._remind_task
+        # 没挂上循环就不用取消
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return
 
     def _register_forbidden_page(self) -> None:
         """注册违禁词 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
@@ -147,6 +216,7 @@ class RulesPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         """群消息：管理命令、违禁词、入群验证、关键词。前三条命中后都要停 LLM。"""
+        self._remember_bot(event)
         group_id = _group_id_of(event)
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
@@ -207,6 +277,7 @@ class RulesPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def on_private_verify(self, event: AstrMessageEvent):
         """私聊交码。不是待验证就放过，让别的插件和模型继续。"""
+        self._remember_bot(event)
         text = event.message_str or ""
         handled, reply = await handle_verify_private(
             self.verify, event, _sender_id_of(event), text
@@ -230,6 +301,7 @@ class RulesPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
         """群成员增加：欢迎语和验证说明分开发。空通知也要停 LLM。"""
+        self._remember_bot(event)
         group_id = _group_id_of(event)
         # 拿不到群号就不是群通知
         if not group_id:
@@ -606,6 +678,13 @@ class RulesPlugin(Star):
         return await _with_group(
             event, lambda group_id: list_rules(self.keywords, event, group_id)
         )
+
+
+class _BotEvent:
+    """提醒循环没有真实 AstrBot 事件，只借用记下的 OneBot。"""
+
+    def __init__(self, bot: object) -> None:
+        self.bot = bot
 
 
 ONLY_IN_GROUP = "这个功能只能在群里用。"

@@ -105,6 +105,8 @@ VERIFY_JOIN_MUTE_SECONDS = 2592000
 # 入群后第一次群内提醒隔 2 分钟；之后翻倍，上限 30 分钟后固定 30 分钟。
 VERIFY_REMIND_FIRST_MINUTES = 2
 VERIFY_REMIND_MAX_MINUTES = 30
+# 提醒循环大约隔多久扫一次到期 pending。不是每人一个任务。
+VERIFY_REMIND_TICK_SECONDS = 20
 
 # 注册插件 Page API 时用的插件名，必须和仓库目录名一致。
 PLUGIN_NAME = "astrbot_plugin_w1ndys_rules"
