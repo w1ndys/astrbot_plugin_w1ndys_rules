@@ -1,8 +1,9 @@
-# 业务层：到期该隔多久、怎么换新码。不发消息，不撤回，不碰 AstrBot。
+# 业务层：到期该隔多久、怎么换新码，以及发新提醒并撤回上一条。
 
 from ..data.verify_store import VerifyStore
 from ..entity.constants import VERIFY_REMIND_FIRST_MINUTES, VERIFY_REMIND_MAX_MINUTES
-from .verify_join import new_code
+from .verify_action import recall_message_id, send_verify_prompt
+from .verify_join import hint_text, new_code
 
 
 def remind_wait_minutes(remind_count: int) -> int:
@@ -35,4 +36,25 @@ async def rotate_due_code(
     await store.update_remind(
         group_id, user_id, code, now_ts + wait * 60, count
     )
+    return code
+
+
+async def send_due_remind(
+    store: VerifyStore,
+    event: object,
+    group_id: str,
+    user_id: str,
+    now_ts: int,
+) -> str:
+    """到期发新提醒并撤回上一条。没到期或不是 pending 返回空串。"""
+    old_prompt = store.get_prompt_message_id(group_id, user_id)
+    code = await rotate_due_code(store, group_id, user_id, now_ts)
+    # 没换到新码就不要发、不要撤
+    if not code:
+        return ""
+    mid = await send_verify_prompt(event, user_id, hint_text(code), group_id)
+    await recall_message_id(event, old_prompt)
+    # 没拿到新消息 ID 就空着，下次通过也撤不掉
+    if mid:
+        await store.set_prompt_message_id(group_id, user_id, mid)
     return code

@@ -153,14 +153,17 @@ async def send_group_plain(event: object, group_id: str, text: str) -> None:
     await _call_action(event, "send_group_msg", group_id=gid, message=text)
 
 
-async def send_verify_prompt(event: object, user_id: str, text: str) -> str:
+async def send_verify_prompt(
+    event: object, user_id: str, text: str, group_id: str = ""
+) -> str:
     """用 send_group_msg 发验证说明，回报里的 message_id 给撤回用。"""
-    getter = getattr(event, "get_group_id", None)
-    group_id = ""
-    # 残缺事件没有群号方法
-    if callable(getter):
-        group_id = str(getter() or "")
-    # 入群通知拿不到群号就发不出去
+    # 提醒循环带群号；入群通知从当前事件取
+    if not group_id:
+        getter = getattr(event, "get_group_id", None)
+        # 残缺事件没有群号方法
+        if callable(getter):
+            group_id = str(getter() or "")
+    # 拿不到群号就发不出去
     if not group_id:
         return ""
     try:

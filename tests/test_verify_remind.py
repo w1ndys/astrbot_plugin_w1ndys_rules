@@ -14,6 +14,7 @@ if PARENT not in sys.path:
 from astrbot_plugin_w1ndys_rules.business.verify_remind import (
     remind_wait_minutes,
     rotate_due_code,
+    send_due_remind,
 )
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 
@@ -73,3 +74,56 @@ class VerifyRemindTest(unittest.IsolatedAsyncioTestCase):
             self.store.get_next_remind_at("123", "10001"),
             second_due + 8 * 60,
         )
+
+    async def test_send_due_skips_when_not_due(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        event = FakeSpeakEvent()
+        next_at = self.store.get_next_remind_at("123", "10001")
+        code = await send_due_remind(
+            self.store, event, "123", "10001", next_at - 1
+        )
+        self.assertEqual(code, "")
+        self.assertEqual(event.bot.api.calls, [])
+        self.assertEqual(self.store.get_code("123", "10001"), "111111")
+
+    async def test_send_due_sends_then_recalls_old(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        await self.store.set_prompt_message_id("123", "10001", "77")
+        event = FakeSpeakEvent()
+        now = self.store.get_next_remind_at("123", "10001")
+        code = await send_due_remind(self.store, event, "123", "10001", now)
+        self.assertTrue(code)
+        self.assertNotEqual(code, "111111")
+        self.assertEqual(self.store.get_prompt_message_id("123", "10001"), "88")
+        self.assertEqual(event.bot.api.calls[0][0], "send_group_msg")
+        payload = event.bot.api.calls[0][1]["message"]
+        self.assertEqual(payload[0], {"type": "at", "data": {"qq": "10001"}})
+        self.assertIn(code, payload[1]["data"]["text"])
+        self.assertEqual(event.bot.api.calls[1], ("delete_msg", {"message_id": 77}))
+
+
+class FakeApi:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_action(self, action: str, **kwargs):
+        self.calls.append((action, kwargs))
+        # 发群消息要带回 message_id，后面撤回靠它
+        if action == "send_group_msg":
+            return {"message_id": 88}
+        return {}
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.api = FakeApi()
+
+
+class FakeSpeakEvent:
+    """给发提醒/撤回提供 OneBot 调用记录。"""
+
+    def __init__(self) -> None:
+        self.bot = FakeBot()
+
+    def get_self_id(self) -> str:
+        return "999"
