@@ -248,12 +248,14 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(code, prompt)
         self.assertNotIn("请先看群规", prompt)
 
-    async def test_decrease_drops_pending_silently(self) -> None:
+    async def test_decrease_drops_pending_and_recalls(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
         event = FakeEvent({"notice_type": "group_decrease"})
         await self.plugin.on_group_decrease(event)
         self.assertTrue(event.stopped)
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
+        self.assertEqual(event.bot.api.calls, [("delete_msg", {"message_id": 77})])
 
     async def test_decrease_ignores_plain_message(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")

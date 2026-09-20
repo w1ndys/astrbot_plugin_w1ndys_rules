@@ -282,7 +282,13 @@ class RulesPlugin(Star):
             return
         # 退群通知没有文本，不拦住的话模型可能对空事件乱回
         _stop_llm(event)
-        await drop_pending(self.verify, group_id, _sender_id_of(event))
+        user_id = _sender_id_of(event)
+        prompt_id = self.verify.get_prompt_message_id(group_id, user_id)
+        dropped = await drop_pending(self.verify, group_id, user_id)
+        # 本来就没有 pending，没有提示可撤
+        if not dropped:
+            return
+        await recall_message_id(event, prompt_id)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_unmute(self, event: AstrMessageEvent):
@@ -469,7 +475,7 @@ class RulesPlugin(Star):
         """
         return await _with_group(
             event,
-            lambda group_id: reject_user(self.verify, event, group_id, user_id),
+            lambda group_id: _verify_reject(self.verify, event, group_id, user_id),
         )
 
     @filter.llm_tool(name="verify_scan")
@@ -608,7 +614,7 @@ ONLY_IN_GROUP = "这个功能只能在群里用。"
 async def _verify_pass(
     store: VerifyStore, event: object, group_id: str, user_id: str
 ) -> str:
-    """管理员通过后解禁并撤回入群提示。没通过就不调 OneBot。"""
+    """管理员通过后解禁、撤回提示、群里 @。没通过就不调 OneBot。"""
     clean = user_id.strip()
     prompt_id = ""
     # 号码合法才去取提示 ID，乱码交给 pass_user 回报
@@ -618,6 +624,23 @@ async def _verify_pass(
     # 没删到 pending 不解禁，避免解错人
     if unmute:
         await unmute_user(event, group_id, unmute)
+        await recall_message_id(event, prompt_id)
+        await send_verify_prompt(event, unmute, PASS_REPLY)
+    return message
+
+
+async def _verify_reject(
+    store: VerifyStore, event: object, group_id: str, user_id: str
+) -> str:
+    """管理员拒绝后撤回入群提示。没删到 pending 不调 OneBot。"""
+    clean = user_id.strip()
+    prompt_id = ""
+    # 号码合法才去取提示 ID，乱码交给 reject_user 回报
+    if clean.isdigit():
+        prompt_id = store.get_prompt_message_id(group_id, clean)
+    message, dropped = await reject_user(store, event, group_id, user_id)
+    # 没删到 pending 不撤回，避免撤错消息
+    if dropped:
         await recall_message_id(event, prompt_id)
     return message
 

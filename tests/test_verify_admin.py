@@ -67,11 +67,15 @@ class VerifyAdminTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_reject_deletes_without_unmute(self) -> None:
         await self.store.put("123", "10001", "123456")
-        message = await reject_user(self.store, self.event, "123", "10001")
+        message, dropped = await reject_user(self.store, self.event, "123", "10001")
         self.assertEqual(message, "已拒绝入群验证：10001（未踢出）")
+        self.assertEqual(dropped, "10001")
         self.assertEqual(self.store.get_code("123", "10001"), "")
-        missing = await reject_user(self.store, self.event, "123", "10001")
+        missing, missing_dropped = await reject_user(
+            self.store, self.event, "123", "10001"
+        )
         self.assertEqual(missing, "不在待验证名单里：10001")
+        self.assertEqual(missing_dropped, "")
 
     async def test_scan_lists_only_this_group(self) -> None:
         await self.store.put("123", "10002", "222222")
@@ -90,11 +94,14 @@ class VerifyAdminTest(unittest.IsolatedAsyncioTestCase):
         guest = FakeEvent(admin=False)
         await self.store.put("123", "10001", "123456")
         passed, unmute = await pass_user(self.store, guest, "123", "10001")
-        rejected = await reject_user(self.store, guest, "123", "10001")
+        rejected, rejected_dropped = await reject_user(
+            self.store, guest, "123", "10001"
+        )
         scanned, ids = scan_users(self.store, guest, "123")
         self.assertEqual(passed, REJECT_MESSAGE)
         self.assertEqual(unmute, "")
         self.assertEqual(rejected, REJECT_MESSAGE)
+        self.assertEqual(rejected_dropped, "")
         self.assertEqual(scanned, REJECT_MESSAGE)
         self.assertEqual(ids, [])
         self.assertEqual(self.store.get_code("123", "10001"), "123456")

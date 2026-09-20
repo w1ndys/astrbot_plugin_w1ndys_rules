@@ -141,27 +141,33 @@ class VerifyToolEntryTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    async def test_pass_unmutes_and_deletes(self) -> None:
+    async def test_pass_unmutes_recalls_and_mentions(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
         message = await self.plugin.tool_verify_pass(self.event, "10001")
         self.assertEqual(message, "已通过入群验证：10001")
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
+        self.assertEqual(self.event.bot.api.calls[0][0], "set_group_ban")
         self.assertEqual(
-            self.event.bot.api.calls,
-            [
-                (
-                    "set_group_ban",
-                    {"group_id": 123, "user_id": 10001, "duration": 0},
-                )
-            ],
+            self.event.bot.api.calls[0][1],
+            {"group_id": 123, "user_id": 10001, "duration": 0},
         )
+        self.assertEqual(self.event.bot.api.calls[1], ("delete_msg", {"message_id": 77}))
+        self.assertEqual(self.event.bot.api.calls[2][0], "send_group_msg")
+        payload = self.event.bot.api.calls[2][1]["message"]
+        self.assertEqual(payload[0], {"type": "at", "data": {"qq": "10001"}})
+        self.assertIn("已通过人机验证。", payload[1]["data"]["text"])
 
-    async def test_reject_deletes_without_unmute(self) -> None:
+    async def test_reject_recalls_without_unmute(self) -> None:
         await self.plugin.verify.put("123", "10001", "123456")
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
         message = await self.plugin.tool_verify_reject(self.event, "10001")
         self.assertEqual(message, "已拒绝入群验证：10001（未踢出）")
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
-        self.assertEqual(self.event.bot.api.calls, [])
+        self.assertEqual(
+            self.event.bot.api.calls,
+            [("delete_msg", {"message_id": 77})],
+        )
 
     async def test_scan_mentions_this_group_only(self) -> None:
         await self.plugin.verify.put("123", "10002", "222222")

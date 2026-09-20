@@ -40,21 +40,21 @@ async def pass_user(
 
 async def reject_user(
     store: VerifyStore, event: object, group_id: str, user_id: str
-) -> str:
-    """关掉这个人的 pending。不踢人。"""
+) -> tuple[str, str]:
+    """关掉这个人的 pending。不踢人。返回 (文案, 已删的 QQ)。没删则 QQ 空串。"""
     # 非管理员不能改验证状态
     if not is_admin(event):
-        return REJECT_MESSAGE
+        return REJECT_MESSAGE, ""
     clean, error = _clean_user_id(user_id)
     # 空号和乱码不拿去查库
     if error:
-        return error
+        return error, ""
     code = store.get_code(group_id, clean)
     # 没这行要如实说
     if not code:
-        return f"不在待验证名单里：{clean}"
+        return f"不在待验证名单里：{clean}", ""
     await store.delete(group_id, clean)
-    return f"已拒绝入群验证：{clean}（未踢出）"
+    return f"已拒绝入群验证：{clean}（未踢出）", clean
 
 
 def scan_users(
