@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .._shared.db import connect, create_table
-from ..entity.constants import VERIFY_REMIND_FIRST_MINUTES
+from ..entity.constants import VERIFY_REMIND_INTERVAL_MINUTES
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS verify_pending (
@@ -190,7 +190,7 @@ class VerifyStore:
     def _put_sync(self, group_id: str, user_id: str, code: str) -> None:
         """同步写库并更新快照，给 to_thread 用。"""
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        next_at = int(time.time()) + VERIFY_REMIND_FIRST_MINUTES * 60
+        next_at = int(time.time()) + VERIFY_REMIND_INTERVAL_MINUTES * 60
         conn = connect(self.db_path)
         try:
             conn.execute(

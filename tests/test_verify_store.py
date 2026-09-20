@@ -15,7 +15,7 @@ if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
-from astrbot_plugin_w1ndys_rules.entity.constants import VERIFY_REMIND_FIRST_MINUTES
+from astrbot_plugin_w1ndys_rules.entity.constants import VERIFY_REMIND_INTERVAL_MINUTES
 
 
 class VerifyStoreTest(unittest.IsolatedAsyncioTestCase):
@@ -109,7 +109,7 @@ class VerifyStoreTest(unittest.IsolatedAsyncioTestCase):
         await self.store.put("123", "10001", "123456")
         after = int(time.time())
         next_at = self.store.get_next_remind_at("123", "10001")
-        wait = VERIFY_REMIND_FIRST_MINUTES * 60
+        wait = VERIFY_REMIND_INTERVAL_MINUTES * 60
         self.assertEqual(self.store.get_remind_count("123", "10001"), 0)
         self.assertGreaterEqual(next_at, before + wait)
         self.assertLessEqual(next_at, after + wait)
