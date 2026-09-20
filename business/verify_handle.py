@@ -1,11 +1,11 @@
-# 业务层：待验证的人私聊交码。对了撤群里的提示、解禁、在群里报通过；错了只回私聊一句。
+# 业务层：待验证的人私聊交码。对了撤群里的提示、解禁、私聊告知通过；错了只回私聊一句。
 # 群消息不再走入群验证交码。
 
 from ..data.verify_store import VerifyStore
-from .verify_action import recall_message_id, send_group_plain, unmute_user
+from .verify_action import recall_message_id, unmute_user
 from .verify_check import code_in_text
 
-# 交码成功发到群里；失败只回私聊。不提踢人。
+# 交码成功、失败都只回私聊。不提踢人。
 PASS_REPLY = "已通过人机验证。"
 FAIL_REPLY = "验证码不对。"
 
@@ -48,6 +48,5 @@ async def handle_verify_private(
     await store.delete(group_id, user_id)
     await recall_message_id(event, prompt_id)
     await unmute_user(event, group_id, user_id)
-    await send_group_plain(event, group_id, PASS_REPLY)
-    # 成功不在私聊再回一句
-    return True, ""
+    # 自己交码通过只在私聊说，群里不再报
+    return True, PASS_REPLY

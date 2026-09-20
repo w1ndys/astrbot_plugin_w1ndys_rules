@@ -221,12 +221,12 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.bot.api.calls, [])
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
 
-    async def test_private_pass_unmutes_and_notifies_group(self) -> None:
+    async def test_private_pass_unmutes_and_replies_privately(self) -> None:
         await self._pending()
         await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
         event = FakeEvent("123456")
         sent = await collect(self.plugin.on_private_verify(event))
-        self.assertEqual(sent, [])
+        self.assertEqual(sent, [PASS_REPLY])
         self.assertTrue(event.stopped)
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
         self.assertEqual(
@@ -236,10 +236,6 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
                 (
                     "set_group_ban",
                     {"group_id": 123, "user_id": 10001, "duration": 0},
-                ),
-                (
-                    "send_group_msg",
-                    {"group_id": 123, "message": PASS_REPLY},
                 ),
             ],
         )

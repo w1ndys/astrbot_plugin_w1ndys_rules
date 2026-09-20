@@ -214,7 +214,7 @@ class RulesPlugin(Star):
         # 这个人没有 pending，不当验证私聊
         if not handled:
             return
-        # 失败回一句不对；成功不在私聊再说话
+        # 失败回不对；成功回已通过。都在私聊，拦 LLM
         if reply:
             yield event.plain_result(reply)
         _stop_llm(event)

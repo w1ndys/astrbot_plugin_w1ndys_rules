@@ -1,4 +1,4 @@
-# 私聊交码：对了删行、撤提示、解禁、群里报通过；错了只回私聊；没 pending 跳过。
+# 私聊交码：对了删行、撤提示、解禁、私聊报通过；错了只回私聊；没 pending 跳过。
 
 import sys
 import tempfile
@@ -92,14 +92,14 @@ class VerifyHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(action, "pass")
         self.assertEqual(group_id, "222")
 
-    async def test_private_pass_unmutes_recalls_and_notifies_group(self) -> None:
+    async def test_private_pass_unmutes_recalls_and_replies_privately(self) -> None:
         await self._pending("123456", "77")
         event = FakeSpeakEvent()
         handled, reply = await handle_verify_private(
             self.store, event, self.user_id, "123456"
         )
         self.assertTrue(handled)
-        self.assertEqual(reply, "")
+        self.assertEqual(reply, PASS_REPLY)
         self.assertEqual(self.store.get_code(self.group_id, self.user_id), "")
         self.assertEqual(
             event.bot.api.calls,
@@ -108,10 +108,6 @@ class VerifyHandleTest(unittest.IsolatedAsyncioTestCase):
                 (
                     "set_group_ban",
                     {"group_id": 123, "user_id": 10001, "duration": 0},
-                ),
-                (
-                    "send_group_msg",
-                    {"group_id": 123, "message": PASS_REPLY},
                 ),
             ],
         )
