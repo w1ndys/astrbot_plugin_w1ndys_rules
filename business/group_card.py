@@ -63,15 +63,12 @@ def _group_listed(config: object, group_id: str) -> bool:
 
 
 def _config_group_ids(config: object) -> list:
-    """从 WebUI 取出要拦截群名片的群号。新格式是按条添加的列表。"""
+    """从 WebUI 取出要拦截群名片的群号。只认按条添加的列表。"""
     value = _config_raw(config, FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS)
-    # 新 WebUI 按条添加，得到字符串数组
-    if isinstance(value, list):
-        return _clean_group_ids(value)
-    # 旧文本框还没重新保存时，仍按空格/逗号拆，避免名单突然失效
-    if isinstance(value, str):
-        return _clean_group_ids(value.replace(",", " ").split())
-    return []
+    # 不是数组就当没配，旧文本框不再拆
+    if not isinstance(value, list):
+        return []
+    return _clean_group_ids(value)
 
 
 def _config_raw(config: object, key: str):

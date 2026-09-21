@@ -153,10 +153,11 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply, "")
         self.assertEqual(event.bot.api.calls, [])
 
-    async def test_legacy_text_list_still_hits(self) -> None:
+    async def test_text_config_skips(self) -> None:
         event = FakeEvent([Json(GROUP_CARD)])
         config = on_config()
-        config[FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS] = "123, 456"
+        config[FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS] = "123"
         handled, reply = await handle_group_card(config, event, "123")
-        self.assertTrue(handled)
-        self.assertEqual(reply, "不要发群名片。")
+        self.assertFalse(handled)
+        self.assertEqual(reply, "")
+        self.assertEqual(event.bot.api.calls, [])
