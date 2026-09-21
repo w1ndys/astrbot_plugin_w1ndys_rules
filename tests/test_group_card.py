@@ -99,7 +99,7 @@ class FakeEvent:
 
 def on_config() -> dict:
     return {
-        FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: "123",
+        FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: ["123"],
         FORBIDDEN_CFG_MUTE_SECONDS: 60,
         FORBIDDEN_CFG_REMIND_TEXT: "不要发群名片。",
     }
@@ -152,3 +152,11 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(reply, "")
         self.assertEqual(event.bot.api.calls, [])
+
+    async def test_legacy_text_list_still_hits(self) -> None:
+        event = FakeEvent([Json(GROUP_CARD)])
+        config = on_config()
+        config[FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS] = "123, 456"
+        handled, reply = await handle_group_card(config, event, "123")
+        self.assertTrue(handled)
+        self.assertEqual(reply, "不要发群名片。")

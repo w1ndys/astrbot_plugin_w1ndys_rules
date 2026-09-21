@@ -96,7 +96,7 @@ FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
-# WebUI：要拦截群名片的群号名单。没写的群不拦。
+# WebUI：要拦截群名片的群号名单，按条添加。没写的群不拦。
 FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS = "forbidden_block_group_card_groups"
 # 飞书和处置日志里的触发名，不是用户正文，避免把卡片 JSON 里的签名带出去。
 GROUP_CARD_HIT = "群名片"

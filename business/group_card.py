@@ -5,7 +5,6 @@ import json
 
 from ..entity.constants import FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS, GROUP_CARD_HIT
 from .forbidden_action import apply_hit_actions
-from .forbidden_judge import config_text
 from .qq_role import is_qq_group_staff
 
 
@@ -56,12 +55,47 @@ def _group_listed(config: object, group_id: str) -> bool:
     # 没有群号对不上名单
     if not group_id:
         return False
-    raw = config_text(config, FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS)
-    for part in raw.replace(",", " ").split():
+    for item in _config_group_ids(config):
         # 名单里这一项就是本群
-        if part == group_id:
+        if item == group_id:
             return True
     return False
+
+
+def _config_group_ids(config: object) -> list:
+    """从 WebUI 取出要拦截群名片的群号。新格式是按条添加的列表。"""
+    value = _config_raw(config, FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS)
+    # 新 WebUI 按条添加，得到字符串数组
+    if isinstance(value, list):
+        return _clean_group_ids(value)
+    # 旧文本框还没重新保存时，仍按空格/逗号拆，避免名单突然失效
+    if isinstance(value, str):
+        return _clean_group_ids(value.replace(",", " ").split())
+    return []
+
+
+def _config_raw(config: object, key: str):
+    """从插件配置取出原值。没有配置返回 None。"""
+    # 没挂上 WebUI 配置就当全空
+    if config is None:
+        return None
+    getter = getattr(config, "get", None)
+    # 配置对象不像字典也当没有
+    if not callable(getter):
+        return None
+    return getter(key)
+
+
+def _clean_group_ids(items: list) -> list:
+    """去掉空项和首尾空白，得到可比较的群号。"""
+    result = []
+    for item in items:
+        text = str(item).strip()
+        # 空项忽略
+        if not text:
+            continue
+        result.append(text)
+    return result
 
 
 def _looks_like_group_card(card: dict) -> bool:

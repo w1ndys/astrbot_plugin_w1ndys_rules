@@ -32,9 +32,12 @@
   },
   "forbidden_block_group_card_groups": {
     "description": "拦截群名片的群",
-    "type": "text",
-    "default": "",
-    "hint": "要拦截 QQ 群名片的群号，一行一个，也可用逗号分隔。名单里的群发群名片直接当违规：撤回、禁言、提醒、飞书。不走触发词和模型。留空则都不拦。群主和管理员不拦。"
+    "type": "list",
+    "default": [],
+    "hint": "要拦截 QQ 群名片的群号，按条添加。名单里的群发群名片直接当违规：撤回、禁言、提醒、飞书。不走触发词和模型。空名单则都不拦。群主和管理员不拦。",
+    "items": {
+      "type": "string"
+    }
   },
   "verify_mute_seconds": {
     "description": "入群验证禁言秒数",

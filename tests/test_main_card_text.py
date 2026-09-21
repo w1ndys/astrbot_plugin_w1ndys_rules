@@ -179,7 +179,7 @@ class GroupCardEntryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_card_only_is_blocked(self) -> None:
         self.plugin.config = {
-            FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: "123",
+            FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: ["123"],
             FORBIDDEN_CFG_MUTE_SECONDS: 60,
             FORBIDDEN_CFG_REMIND_TEXT: "不要发群名片。",
         }
@@ -191,7 +191,7 @@ class GroupCardEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(event.stopped)
 
     async def test_switch_off_skips_card(self) -> None:
-        self.plugin.config = {FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: ""}
+        self.plugin.config = {FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS: []}
         event = FakeEvent("", messages=[Json(GROUP_CARD)])
         sent = await collect(self.plugin.on_group_message(event))
         self.assertEqual(sent, [])
