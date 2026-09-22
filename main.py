@@ -47,7 +47,7 @@ from .business.forbidden_judge import (
 )
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
-from .business.keyword_admin import add_rule, delete_rule, list_rules, update_rule
+from .business.keyword_admin import delete_rule, list_rules, write_rule
 from .business.keyword_reply import pick_reply
 from .business.verify_action import (
     mute_user,
@@ -619,16 +619,17 @@ class RulesPlugin(Star):
             ),
         )
 
-    @filter.llm_tool(name="keyword_add")
-    async def tool_keyword_add(
+    @filter.llm_tool(name="keyword_set")
+    async def tool_keyword_set(
         self,
         event: AstrMessageEvent,
         keyword: str,
         reply: str,
     ) -> str:
-        """给本群新增一条关键词回复规则。触发条件是群员整条消息与该关键词完全相等。
-        只在机器人的管理员明确要求添加关键词时调用
-        对用户的最终回复只要一句结果，不要预告、不要列方案、不要自己补充解释。
+        """写入本群一条关键词回复规则。添加和修改都用这个工具，不要先猜本群有没有这条。
+        没有就新增，有就覆盖，工具会如实回报是「已添加」还是「已覆盖」。
+        触发条件是群员整条消息与该关键词完全相等。只在管理员明确要求添加或修改时调用。
+        写操作直接执行。最终回复只要转达工具那一句，不要自己说已经写好。
 
         Args:
             keyword(string): 群员要发送的关键词，必须与整条消息完全一致；不能以唤醒前缀开头
@@ -636,28 +637,7 @@ class RulesPlugin(Star):
         """
         return await _with_group(
             event,
-            lambda group_id: add_rule(
-                self.context, self.keywords, event, group_id, keyword, reply
-            ),
-        )
-
-    @filter.llm_tool(name="keyword_update")
-    async def tool_keyword_update(
-        self,
-        event: AstrMessageEvent,
-        keyword: str,
-        reply: str,
-    ) -> str:
-        """修改本群某条关键词的回复内容。不要凭记忆判断本群有没有这条关键词，一律调用本工具，
-        由它来判定：不存在时它会明确说明，不会悄悄变成新增。对用户的最终回复只要一句结果。
-
-        Args:
-            keyword(string): 要修改的关键词，必须与整条消息完全一致
-            reply(string): 这条关键词新的回复内容
-        """
-        return await _with_group(
-            event,
-            lambda group_id: update_rule(
+            lambda group_id: write_rule(
                 self.context, self.keywords, event, group_id, keyword, reply
             ),
         )
@@ -668,7 +648,8 @@ class RulesPlugin(Star):
         event: AstrMessageEvent,
         keyword: str,
     ) -> str:
-        """删除本群的一条关键词回复规则。对用户的最终回复只要一句结果。
+        """删除本群的一条关键词回复规则。不要凭记忆判断有没有这条，一律调用本工具。
+        删没删掉由工具回报，不要自己说已经删掉。最终回复只要转达工具那一句。
 
         Args:
             keyword(string): 要删除的关键词，必须与整条消息完全一致

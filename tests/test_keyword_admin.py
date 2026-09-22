@@ -1,4 +1,4 @@
-# 单条关键词管理：删除不校验唤醒前缀，写入仍校验。
+# 单条关键词管理：删除不校验唤醒前缀，写入仍校验；添加和修改合成一次写入。
 
 import sys
 import tempfile
@@ -12,8 +12,8 @@ if PARENT not in sys.path:
 
 from astrbot_plugin_w1ndys_rules.business.keyword_admin import (
     REJECT_MESSAGE,
-    add_rule,
     delete_rule,
+    write_rule,
 )
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.entity.constants import KEYWORD_MAX_LEN
@@ -96,9 +96,9 @@ class KeywordAdminTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message, REJECT_MESSAGE)
         self.assertIsNotNone(self.store.rule_of(self.group_id, "/带前缀"))
 
-    async def test_add_still_rejects_wake_prefix(self) -> None:
+    async def test_write_still_rejects_wake_prefix(self) -> None:
         """写入路径仍拦唤醒前缀，避免永远匹配不到的规则进库。"""
-        message = await add_rule(
+        message = await write_rule(
             self.context,
             self.store,
             self.event,
@@ -108,3 +108,66 @@ class KeywordAdminTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("不能以「/」开头", message)
         self.assertIsNone(self.store.rule_of(self.group_id, "/新词"))
+
+    async def test_write_adds_missing_keyword(self) -> None:
+        """本群没有这条时直接新增，不要求模型先判断存在性。"""
+        message = await write_rule(
+            self.context,
+            self.store,
+            self.event,
+            self.group_id,
+            "不存在的词",
+            "abc",
+        )
+        self.assertEqual(
+            message, "已添加关键词「不存在的词」，命中后回复「abc」。"
+        )
+        rule = self.store.rule_of(self.group_id, "不存在的词")
+        self.assertIsNotNone(rule)
+        self.assertEqual(rule.reply, "abc")
+
+    async def test_write_covers_existing_keyword(self) -> None:
+        """已有关键词时覆盖回复，并如实回报覆盖。"""
+        await self.store.upsert(self.group_id, "晚安", "旧回复")
+        message = await write_rule(
+            self.context,
+            self.store,
+            self.event,
+            self.group_id,
+            "晚安",
+            "早点睡",
+        )
+        self.assertEqual(
+            message, "已覆盖关键词「晚安」，命中后回复「早点睡」。"
+        )
+        rule = self.store.rule_of(self.group_id, "晚安")
+        self.assertIsNotNone(rule)
+        self.assertEqual(rule.reply, "早点睡")
+
+    async def test_write_skips_same_reply(self) -> None:
+        """回复没变就不写库，避免无意义覆盖。"""
+        await self.store.upsert(self.group_id, "晚安", "早点睡")
+        message = await write_rule(
+            self.context,
+            self.store,
+            self.event,
+            self.group_id,
+            "晚安",
+            "早点睡",
+        )
+        self.assertEqual(
+            message, "关键词「晚安」的回复本来就是「早点睡」，没有改动。"
+        )
+
+    async def test_write_rejects_non_admin(self) -> None:
+        """非管理员不能写，库里不能出现这条。"""
+        message = await write_rule(
+            self.context,
+            self.store,
+            FakeEvent(admin=False),
+            self.group_id,
+            "不存在的词",
+            "abc",
+        )
+        self.assertEqual(message, REJECT_MESSAGE)
+        self.assertIsNone(self.store.rule_of(self.group_id, "不存在的词"))
