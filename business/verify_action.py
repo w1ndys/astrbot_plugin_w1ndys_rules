@@ -1,6 +1,8 @@
-# 业务层：待验证失败禁言、通过解禁。调 OneBot，失败不往上抛。
+# 业务层：待验证禁言、通过解禁、提醒超次踢出。调 OneBot，失败不往上抛。
 
 import asyncio
+from collections.abc import Awaitable
+from typing import cast
 
 
 async def mute_user(
@@ -16,6 +18,29 @@ async def mute_user(
 async def unmute_user(event: object, group_id: str, user_id: str) -> None:
     """解禁指定群员。没有 QQ 号就跳过。"""
     await _set_ban(event, group_id, user_id, 0)
+
+
+async def kick_user(event: object, group_id: str, user_id: str) -> bool:
+    """把这个人移出群。不拒绝以后再入群。踢自己、坏号码或协议失败返回 False。"""
+    # 没有 QQ 号对不上人，踢不了
+    if not user_id:
+        return False
+    # 不能把自己踢出群
+    if user_id == _self_id(event):
+        return False
+    try:
+        uid = int(user_id)
+        gid = int(group_id)
+    except (TypeError, ValueError):
+        # 号码不是整数，协议端收不了
+        return False
+    return await _call_action(
+        event,
+        "set_group_kick",
+        group_id=gid,
+        user_id=uid,
+        reject_add_request=False,
+    )
 
 
 async def _set_ban(
@@ -70,7 +95,9 @@ async def _call_result(event: object, action: str, **kwargs: object) -> object:
     if not callable(chat):
         return None
     try:
-        return await asyncio.wait_for(chat(action, **kwargs), 15)
+        # getattr 只能看出能调用，这里声明返回可等待结果，给 wait_for 用
+        pending = cast(Awaitable[object], chat(action, **kwargs))
+        return await asyncio.wait_for(pending, 15)
     except Exception:  # noqa: BLE001 - OneBot 适配器异常类型不固定
         # 协议失败不打断后面的群文案
         return None
@@ -91,7 +118,9 @@ async def _call_action(event: object, action: str, **kwargs: object) -> bool:
     if not callable(chat):
         return False
     try:
-        await asyncio.wait_for(chat(action, **kwargs), 15)
+        # getattr 只能看出能调用，这里声明返回可等待结果，给 wait_for 用
+        pending = cast(Awaitable[object], chat(action, **kwargs))
+        await asyncio.wait_for(pending, 15)
     except Exception:  # noqa: BLE001 - OneBot 适配器异常类型不固定
         # 协议失败不打断后面的群文案
         return False
@@ -172,7 +201,7 @@ async def send_verify_prompt(
         return ""
     # 有入群 QQ 就先 @，和欢迎语一样
     if user_id:
-        message: object = [
+        message = [
             {"type": "at", "data": {"qq": user_id}},
             {"type": "text", "data": {"text": "\n" + text}},
         ]

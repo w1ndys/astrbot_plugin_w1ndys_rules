@@ -68,6 +68,6 @@ def scan_users(
     # 没有待验证的人就不用 @
     if not ids:
         return "本群没有待验证的人。", []
-    lines = [f"本群待验证 {len(ids)} 人，请尽快私聊机器人发送包含验证码的消息："]
+    lines = [f"本群待验证 {len(ids)} 人，请尽快私聊我发送包含验证码的消息："]
     lines.extend(ids)
     return "\n".join(lines), ids

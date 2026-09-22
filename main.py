@@ -754,7 +754,7 @@ async def _send_verify_mentions(event: object, user_ids: list[str]) -> None:
     chain: list = []
     for uid in user_ids:
         chain.append(At(qq=uid))
-    chain.append(Plain("\n请尽快私聊机器人发送包含验证码的消息。"))
+    chain.append(Plain("\n请尽快私聊我发送包含验证码的消息。"))
     await sender(event.chain_result(chain))
 
 

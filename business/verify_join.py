@@ -4,7 +4,7 @@ import random
 
 from .._shared.group_switch_store import GroupSwitchStore
 from ..data.verify_store import VerifyStore
-from ..entity.constants import FEATURE_VERIFY, VERIFY_CODE_LEN
+from ..entity.constants import FEATURE_VERIFY, VERIFY_CODE_LEN, VERIFY_REMIND_MAX
 
 
 def new_code(store: VerifyStore, group_id: str) -> str:
@@ -20,8 +20,9 @@ def new_code(store: VerifyStore, group_id: str) -> str:
 def hint_text(code: str) -> str:
     """入群验证说明。必须含码本身，复制整条私聊也能交码。"""
     return (
-        "请私聊机器人发送包含验证码的消息完成人机验证。\n"
-        f"验证码：{code}"
+        "请私聊我发送包含验证码的消息完成人机验证。\n"
+        f"验证码：{code}\n"
+        f"白天会再提醒 {VERIFY_REMIND_MAX} 次，超过后仍未验证将被移出群。"
     )
 
 

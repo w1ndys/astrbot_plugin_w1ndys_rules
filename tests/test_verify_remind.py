@@ -22,6 +22,7 @@ from astrbot_plugin_w1ndys_rules.business.verify_remind import (
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     VERIFY_REMIND_INTERVAL_MINUTES,
+    VERIFY_REMIND_MAX,
 )
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
@@ -126,8 +127,82 @@ class VerifyRemindTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.bot.api.calls[0][0], "send_group_msg")
         payload = event.bot.api.calls[0][1]["message"]
         self.assertEqual(payload[0], {"type": "at", "data": {"qq": "10001"}})
-        self.assertIn(code, payload[1]["data"]["text"])
+        text = payload[1]["data"]["text"]
+        self.assertIn(code, text)
+        self.assertIn("这是第 1 次提醒，还有 3 次机会。", text)
         self.assertEqual(event.bot.api.calls[1], ("delete_msg", {"message_id": 77}))
+
+    async def test_fourth_remind_says_no_chances_left(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        day = _beijing_ts(10, 0)
+        await self.store.update_remind("123", "10001", "111111", day, 3)
+        event = FakeSpeakEvent()
+        code = await send_due_remind(self.store, event, "123", "10001", day)
+        self.assertTrue(code)
+        text = event.bot.api.calls[0][1]["message"][1]["data"]["text"]
+        self.assertIn("这是第 4 次提醒，还有 0 次机会。", text)
+        self.assertEqual(self.store.get_remind_count("123", "10001"), 4)
+        self.assertNotIn("set_group_kick", [item[0] for item in event.bot.api.calls])
+
+    async def test_over_max_kicks_and_drops_pending(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        day = _beijing_ts(10, 0)
+        await self.store.update_remind("123", "10001", "111111", day, VERIFY_REMIND_MAX)
+        await self.store.set_prompt_message_id("123", "10001", "77")
+        event = FakeSpeakEvent()
+        code = await send_due_remind(self.store, event, "123", "10001", day)
+        self.assertEqual(code, "")
+        self.assertEqual(self.store.get_code("123", "10001"), "")
+        self.assertEqual(
+            event.bot.api.calls[0],
+            (
+                "set_group_kick",
+                {
+                    "group_id": 123,
+                    "user_id": 10001,
+                    "reject_add_request": False,
+                },
+            ),
+        )
+        self.assertEqual(event.bot.api.calls[1], ("delete_msg", {"message_id": 77}))
+        self.assertEqual(event.bot.api.calls[2][0], "send_group_msg")
+        self.assertIn("已移出群", event.bot.api.calls[2][1]["message"])
+
+    async def test_over_max_not_due_does_not_kick(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        day = _beijing_ts(10, 0)
+        await self.store.update_remind(
+            "123", "10001", "111111", day + 60, VERIFY_REMIND_MAX
+        )
+        event = FakeSpeakEvent()
+        code = await send_due_remind(self.store, event, "123", "10001", day)
+        self.assertEqual(code, "")
+        self.assertEqual(event.bot.api.calls, [])
+        self.assertEqual(self.store.get_code("123", "10001"), "111111")
+
+    async def test_over_max_at_night_does_not_kick(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        night = _beijing_ts(23, 0)
+        await self.store.update_remind(
+            "123", "10001", "111111", night, VERIFY_REMIND_MAX
+        )
+        event = FakeSpeakEvent()
+        code = await send_due_remind(self.store, event, "123", "10001", night)
+        self.assertEqual(code, "")
+        self.assertEqual(event.bot.api.calls, [])
+        self.assertEqual(self.store.get_remind_count("123", "10001"), VERIFY_REMIND_MAX)
+
+    async def test_kick_failure_keeps_pending(self) -> None:
+        await self.store.put("123", "10001", "111111")
+        day = _beijing_ts(10, 0)
+        await self.store.update_remind("123", "10001", "111111", day, VERIFY_REMIND_MAX)
+        event = FakeSpeakEvent()
+        event.bot.api = KickFailApi()
+        code = await send_due_remind(self.store, event, "123", "10001", day)
+        self.assertEqual(code, "")
+        self.assertEqual(self.store.get_code("123", "10001"), "111111")
+        self.assertEqual(event.bot.api.calls[0][0], "set_group_kick")
+        self.assertEqual(len(event.bot.api.calls), 1)
 
 
 class FakeApi:
@@ -140,6 +215,17 @@ class FakeApi:
         if action == "send_group_msg":
             return {"message_id": 88}
         return {}
+
+
+class KickFailApi(FakeApi):
+    """踢人协议失败，用来确认 pending 不会被提前删掉。"""
+
+    async def call_action(self, action: str, **kwargs):
+        self.calls.append((action, kwargs))
+        # 模拟协议端拒绝踢人
+        if action == "set_group_kick":
+            raise RuntimeError("kick failed")
+        return await super().call_action(action, **kwargs)
 
 
 class FakeBot:
