@@ -339,9 +339,9 @@ class RulesPlugin(Star):
             user_id,
             _self_id_of(event),
         )
-        # 欢迎语单独发，通过后不会被撤回
+        # 有欢迎语就当场发出。不能 yield：事件已停，框架不会再恢复本处理器，禁言和验证码就发不出去
         if welcome:
-            yield _join_at_text(event, user_id, welcome)
+            await event.send(_join_at_text(event, user_id, welcome))
         # 没开验证就只发欢迎语
         if not verify:
             return
