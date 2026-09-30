@@ -7,8 +7,8 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from .._shared.db import connect, create_table
 from ..entity.constants import BLACKLIST_GLOBAL_SCOPE
+from .db import connect, create_table
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS blacklist (

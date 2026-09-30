@@ -12,12 +12,12 @@ PARENT = str(ROOT.parent)
 if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
-from astrbot_plugin_w1ndys_rules._shared.db import connect
 from astrbot_plugin_w1ndys_rules.business.activity import (
     is_recently_active,
     record_speak,
 )
 from astrbot_plugin_w1ndys_rules.data.activity_store import ActivityStore
+from astrbot_plugin_w1ndys_rules.data.db import connect
 
 
 class ActivityStoreTest(unittest.IsolatedAsyncioTestCase):

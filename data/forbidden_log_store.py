@@ -8,8 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .._shared.db import connect, create_table
 from ..entity.forbidden_log import ForbiddenLog
+from .db import connect, create_table
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
 

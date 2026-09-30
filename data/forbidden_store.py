@@ -4,8 +4,8 @@ import asyncio
 import sqlite3
 from pathlib import Path
 
-from .._shared.db import connect, create_table
 from ..entity.forbidden import ForbiddenItem
+from .db import connect, create_table
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS forbidden_item (

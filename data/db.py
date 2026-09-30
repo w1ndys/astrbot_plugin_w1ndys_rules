@@ -1,5 +1,4 @@
-# _shared 数据层：本插件内各功能共用的 SQLite 底座。
-# 只放「怎么连库、怎么建表」这种每个功能都要重复一遍的代码，
+# 数据层：本插件 SQLite 怎么连、怎么建表。
 # 表结构和业务 SQL 留在各自的 data/*_store.py 里。
 
 import sqlite3

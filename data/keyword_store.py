@@ -7,8 +7,8 @@
 import asyncio
 from pathlib import Path
 
-from .._shared.db import connect, create_table
 from ..entity.keyword import KeywordRule
+from .db import connect, create_table
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS keyword_reply (

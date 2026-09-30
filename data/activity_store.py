@@ -7,8 +7,8 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .._shared.db import connect, create_table
 from ..entity.constants import ACTIVE_WINDOW_DAYS
+from .db import connect, create_table
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS last_speak (
