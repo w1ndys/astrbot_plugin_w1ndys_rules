@@ -20,3 +20,11 @@ class SettingsPageAssetsTest(unittest.TestCase):
             if path.suffix in {".js", ".jsx"}:
                 js = path.read_text()
                 self.assertNotIn("forbidden_feishu_webhook", js, path.name)
+
+    def test_settings_view_groups_by_group(self) -> None:
+        # 配置页按群号勾选，不再按功能用 tags 填群号。
+        js = (SRC / "settings-view.jsx").read_text()
+        self.assertIn("listsToRows", js)
+        self.assertIn("rowsToLists", js)
+        self.assertIn("按群号", js)
+        self.assertNotIn('mode="tags"', js)

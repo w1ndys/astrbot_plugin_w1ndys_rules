@@ -1,93 +1,271 @@
-// 页面层：非密钥全局配置面板。飞书 webhook 不展示、不提交。
+// 页面层：非密钥全局配置。按群号一行勾选功能，保存仍 POST 各功能名单。
+// 飞书 webhook 不展示、不提交。
 
 import { useEffect, useState } from "react";
-import { Button, Card, Form, Input, InputNumber, Select, message } from "antd";
+import { Button, Card, Checkbox, Form, Input, InputNumber, Space, Table, message } from "antd";
 
-function groupSelect(name, label) {
+const FEATURES = [
+  { key: "keyword_groups", title: "关键词" },
+  { key: "forbidden_groups", title: "违禁词" },
+  { key: "welcome_groups", title: "欢迎语" },
+  { key: "verify_groups", title: "入群验证" },
+  { key: "invite_groups", title: "邀请树" },
+  { key: "forbidden_block_group_card_groups", title: "拦截群名片" },
+];
+
+function emptyFlags() {
+  // 新建一行时六个功能都先关。
+  const flags = {};
+  for (const feature of FEATURES) {
+    flags[feature.key] = false;
+  }
+  return flags;
+}
+
+function listsToRows(data) {
+  // 把各功能名单转成按群号一行。
+  const byGroup = {};
+  for (const feature of FEATURES) {
+    const groups = data[feature.key];
+    // 名单不是数组就当这个功能全关
+    if (!Array.isArray(groups)) {
+      continue;
+    }
+    for (const raw of groups) {
+      const groupId = String(raw).trim();
+      // 空群号不能开功能
+      if (!groupId) {
+        continue;
+      }
+      // 第一次见到这个群就建一行，避免同一群号重复出现
+      if (!byGroup[groupId]) {
+        byGroup[groupId] = { groupId, ...emptyFlags() };
+      }
+      byGroup[groupId][feature.key] = true;
+    }
+  }
+  return Object.keys(byGroup)
+    .sort()
+    .map((groupId) => byGroup[groupId]);
+}
+
+function rowsToLists(rows) {
+  // 把勾选表转回各功能名单，供 settings/save。
+  const lists = {};
+  for (const feature of FEATURES) {
+    lists[feature.key] = [];
+  }
+  for (const row of rows) {
+    const groupId = String(row.groupId || "").trim();
+    // 没填群号的空行不写进名单
+    if (!groupId) {
+      continue;
+    }
+    for (const feature of FEATURES) {
+      // 勾了才进该功能名单
+      if (row[feature.key]) {
+        lists[feature.key].push(groupId);
+      }
+    }
+  }
+  return lists;
+}
+
+function makeColumns(onToggle, onRemove) {
+  // 群号列 + 功能勾选列 + 删除。
+  const columns = [{ title: "群号", dataIndex: "groupId", key: "groupId" }];
+  for (const feature of FEATURES) {
+    columns.push({
+      title: feature.title,
+      key: feature.key,
+      render: (_, row) => (
+        <Checkbox
+          checked={!!row[feature.key]}
+          onChange={(event) => onToggle(row.groupId, feature.key, event.target.checked)}
+        />
+      ),
+    });
+  }
+  columns.push({
+    title: "操作",
+    key: "action",
+    render: (_, row) => (
+      <Button type="link" danger onClick={() => onRemove(row.groupId)}>
+        删除
+      </Button>
+    ),
+  });
+  return columns;
+}
+
+function toggleRowFeature(setRows, groupId, key, checked) {
+  // 改某一群的某一个功能勾选。
+  setRows((current) =>
+    current.map((row) => {
+      // 只改点到的那一行
+      if (row.groupId !== groupId) {
+        return row;
+      }
+      return { ...row, [key]: checked };
+    }),
+  );
+}
+
+function removeRow(setRows, groupId) {
+  // 从表里去掉这个群，保存后该群各功能都关。
+  setRows((current) => current.filter((row) => row.groupId !== groupId));
+}
+
+function addRow(rows, setRows, rawId, setRawId) {
+  // 补一行空勾选。群号已存在则拒绝。
+  const groupId = rawId.trim();
+  // 没填群号就没法建行
+  if (!groupId) {
+    message.error("先填群号。");
+    return;
+  }
+  // 同一群只保留一行，避免勾选对不上
+  if (rows.some((row) => row.groupId === groupId)) {
+    message.error("这个群已经在表里。");
+    return;
+  }
+  const next = [...rows, { groupId, ...emptyFlags() }];
+  next.sort((a, b) => a.groupId.localeCompare(b.groupId));
+  setRows(next);
+  setRawId("");
+}
+
+async function bootSettings(bridge, form, setRows, setLoading, cancelled) {
+  // 进页拉配置，把名单摊成表。
+  // 没有官方桥接就读不出配置
+  if (!bridge) {
+    message.error("页面桥接未就绪，请刷新后重试。");
+    return;
+  }
+  await bridge.ready();
+  // 卸载后不再写状态
+  if (cancelled()) {
+    return;
+  }
+  setLoading(true);
+  try {
+    const data = await bridge.apiPost("settings/get", {});
+    // 慢请求回来时页面可能已经切走
+    if (!cancelled()) {
+      form.setFieldsValue(data);
+      setRows(listsToRows(data));
+    }
+  } catch (error) {
+    const text = error && error.message ? error.message : String(error);
+    message.error(text);
+  }
+  setLoading(false);
+}
+
+async function saveSettings(bridge, form, rows) {
+  // 勾选转名单，连同文案秒数一起 POST。
+  const values = await form.validateFields();
+  const payload = { ...values, ...rowsToLists(rows) };
+  try {
+    const result = await bridge.apiPost("settings/save", payload);
+    message.success(result.message || "已保存");
+  } catch (error) {
+    const text = error && error.message ? error.message : String(error);
+    message.error(text);
+  }
+}
+
+function GroupTable(props) {
+  // 群号表和添加框。
   return (
-    <Form.Item name={name} label={label}>
-      <Select mode="tags" tokenSeparators={[",", " "]} />
-    </Form.Item>
+    <>
+      <p className="hint">
+        按群号一行勾选要开的功能，保存写成各功能名单。没出现的群就是全关。飞书 webhook 只在 AstrBot 官方插件配置页改。
+      </p>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input
+          style={{ width: 220 }}
+          placeholder="输入群号后点添加"
+          value={props.newGroupId}
+          onChange={(event) => props.setNewGroupId(event.target.value)}
+        />
+        <Button onClick={() => addRow(props.rows, props.setRows, props.newGroupId, props.setNewGroupId)}>
+          添加群
+        </Button>
+      </Space>
+      <Table
+        rowKey="groupId"
+        size="small"
+        pagination={false}
+        columns={props.columns}
+        dataSource={props.rows}
+        style={{ marginBottom: 16 }}
+        scroll={{ x: true }}
+      />
+    </>
+  );
+}
+
+function ExtraFields(props) {
+  // 欢迎语、违禁、验证秒数等非名单字段。
+  return (
+    <Form form={props.form} layout="vertical">
+      <Form.Item name="welcome_text" label="入群欢迎语文案（全局默认）">
+        <Input.TextArea rows={3} />
+      </Form.Item>
+      <Form.Item name="forbidden_guideline" label="违禁长什么样">
+        <Input />
+      </Form.Item>
+      <Form.Item name="forbidden_samples" label="违禁样本">
+        <Input.TextArea rows={6} />
+      </Form.Item>
+      <Form.Item name="forbidden_mute_seconds" label="禁言秒数">
+        <InputNumber min={0} style={{ width: "100%" }} />
+      </Form.Item>
+      <Form.Item name="forbidden_remind_text" label="提醒文案">
+        <Input />
+      </Form.Item>
+      <Form.Item name="verify_mute_seconds" label="入群验证禁言秒数">
+        <InputNumber min={0} style={{ width: "100%" }} />
+      </Form.Item>
+      <Button type="primary" onClick={props.onSave}>
+        保存
+      </Button>
+    </Form>
   );
 }
 
 export function SettingsView() {
+  // 全局配置面板：表管功能开关，表单管文案秒数。
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [newGroupId, setNewGroupId] = useState("");
   const bridge = window.AstrBotPluginPage;
 
   useEffect(() => {
     let cancelled = false;
-    async function boot() {
-      if (!bridge) {
-        message.error("页面桥接未就绪，请刷新后重试。");
-        return;
-      }
-      await bridge.ready();
-      if (cancelled) {
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await bridge.apiPost("settings/get", {});
-        if (!cancelled) {
-          form.setFieldsValue(data);
-        }
-      } catch (error) {
-        const text = error && error.message ? error.message : String(error);
-        message.error(text);
-      }
-      setLoading(false);
-    }
-    boot();
+    bootSettings(bridge, form, setRows, setLoading, () => cancelled);
     return () => {
       cancelled = true;
     };
   }, [bridge, form]);
 
-  async function save() {
-    const values = await form.validateFields();
-    try {
-      const result = await bridge.apiPost("settings/save", values);
-      message.success(result.message || "已保存");
-    } catch (error) {
-      const text = error && error.message ? error.message : String(error);
-      message.error(text);
-    }
-  }
+  const columns = makeColumns(
+    (groupId, key, checked) => toggleRowFeature(setRows, groupId, key, checked),
+    (groupId) => removeRow(setRows, groupId),
+  );
 
   return (
     <Card title="全局配置" loading={loading}>
-      <p className="hint">手写非密钥字段，保存写回 schema。飞书 webhook 只在 AstrBot 官方插件配置页改。</p>
-      <Form form={form} layout="vertical">
-        {groupSelect("keyword_groups", "开启关键词回复的群")}
-        {groupSelect("forbidden_groups", "开启违禁词的群")}
-        {groupSelect("welcome_groups", "开启欢迎语的群")}
-        {groupSelect("verify_groups", "开启入群验证的群")}
-        {groupSelect("invite_groups", "开启邀请树的群")}
-        {groupSelect("forbidden_block_group_card_groups", "拦截群名片的群")}
-        <Form.Item name="welcome_text" label="入群欢迎语文案（全局默认）">
-          <Input.TextArea rows={3} />
-        </Form.Item>
-        <Form.Item name="forbidden_guideline" label="违禁长什么样">
-          <Input />
-        </Form.Item>
-        <Form.Item name="forbidden_samples" label="违禁样本">
-          <Input.TextArea rows={6} />
-        </Form.Item>
-        <Form.Item name="forbidden_mute_seconds" label="禁言秒数">
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
-        <Form.Item name="forbidden_remind_text" label="提醒文案">
-          <Input />
-        </Form.Item>
-        <Form.Item name="verify_mute_seconds" label="入群验证禁言秒数">
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
-        <Button type="primary" onClick={save}>
-          保存
-        </Button>
-      </Form>
+      <GroupTable
+        rows={rows}
+        setRows={setRows}
+        newGroupId={newGroupId}
+        setNewGroupId={setNewGroupId}
+        columns={columns}
+      />
+      <ExtraFields form={form} onSave={() => saveSettings(bridge, form, rows)} />
     </Card>
   );
 }

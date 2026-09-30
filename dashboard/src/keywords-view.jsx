@@ -104,7 +104,7 @@ export function KeywordsView() {
   return (
     <Card title="关键词回复">
       <p className="hint">
-        一张表管全部群。开启仍看 WebUI「开启关键词回复的群」。群里不再认「关键词 批量」。唤醒后的增删改查还在。
+        一张表管全部群。开启仍看全局配置里该群是否勾选关键词。群里不再认「关键词 批量」。唤醒后的增删改查还在。
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
