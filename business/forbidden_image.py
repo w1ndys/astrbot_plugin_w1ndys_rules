@@ -1,5 +1,5 @@
-# 业务层：图片违禁路。二维码层先跑；未检出再转写、规则门、是/否模型。
-# 不走近 7 天活跃豁免。测试页不处置。
+# 业务层：图片违禁路。二维码层先跑；未检出再转写，有可见文字就送是/否模型。
+# 不走触发词。测试页不处置。
 
 import inspect
 
@@ -8,10 +8,10 @@ from ..entity.constants import (
     FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_QRCODE,
+    IMAGE_TRANSCRIPT_HIT,
     QRCODE_HIT,
 )
 from .forbidden_action import apply_hit_actions
-from .forbidden_image_rule import image_rule_hit
 from .forbidden_judge import (
     ForbiddenTestPlan,
     build_system_prompt,
@@ -33,28 +33,28 @@ def message_has_image(event: object) -> bool:
 def plan_image_test(
     config: object, transcript: str, qr_found: bool
 ) -> ForbiddenTestPlan:
-    """测试页：二维码层或转写规则门。不调用模型，不处置。"""
+    """测试页：二维码层或转写有字就送模型。不调用模型，不处置。"""
     # 解码层检出，描述里写二维码也不算
     if qr_found:
         return ForbiddenTestPlan(
             "qr", "二维码直接违禁，不送模型。", QRCODE_HIT
         )
-    hit = image_rule_hit(transcript)
-    # 规则没开就不打模型
-    if not hit:
-        return ForbiddenTestPlan("skip", "图片规则未命中，不会送模型。")
+    text = transcript.strip()
+    # 空转写没有判断材料，本刀不升视觉
+    if not text:
+        return ForbiddenTestPlan("skip", "没有可见文字，不会送模型。")
     samples = config_text(config, FORBIDDEN_CFG_SAMPLES)
     guideline = config_text(config, FORBIDDEN_CFG_GUIDELINE)
     # 和文本路一样，没准则没样本就测不了
     if not samples.strip() and not guideline.strip():
         return ForbiddenTestPlan(
-            "error", "请先填写 WebUI 判断准则或违禁样本。", hit
+            "error", "请先填写 WebUI 判断准则或违禁样本。"
         )
     return ForbiddenTestPlan(
         "ready",
         "",
-        hit,
-        _image_system(samples, guideline),
+        IMAGE_TRANSCRIPT_HIT,
+        build_system_prompt(samples, guideline),
         _image_user(transcript),
     )
 
@@ -69,7 +69,7 @@ async def handle_forbidden_images(
     decoder=None,
     transcribe=None,
 ) -> tuple[bool, str]:
-    """图片路：先二维码，再转写规则门。没有图返回未处置。"""
+    """图片路：先二维码，再转写有字就送模型。没有图返回未处置。"""
     comps = _image_comps(event)
     # 纯文本不走这里
     if not comps:
@@ -87,19 +87,12 @@ async def handle_forbidden_images(
         )
         return True, remind
     text = await _transcript_of(event, comps, transcribe)
-    hit = image_rule_hit(text)
-    # 没硬信号就不打模型
-    if not hit:
+    plan = plan_image_test(config, text, False)
+    # 空转写或没设定，不打模型
+    if plan.status != "ready":
         return False, ""
     provider = await get_provider()
-    verdict = await complete_yes_no(
-        provider,
-        _image_system(
-            config_text(config, FORBIDDEN_CFG_SAMPLES),
-            config_text(config, FORBIDDEN_CFG_GUIDELINE),
-        ),
-        _image_user(text),
-    )
+    verdict = await complete_yes_no(provider, plan.system, plan.user)
     # 只有整句「是」才处置
     if verdict != "yes":
         return False, ""
@@ -107,22 +100,13 @@ async def handle_forbidden_images(
         event,
         config,
         group_id,
-        hit,
-        _image_user(text),
+        plan.trigger,
+        plan.user,
         poster,
         log_store,
         FORBIDDEN_REASON_IMAGE_MODEL,
     )
     return True, remind
-
-
-def _image_system(samples: str, guideline: str) -> str:
-    """图片路系统提示：同一套准则，补截图和网址。"""
-    extra = (
-        "聊天截图、海报里的招嫖、引流、联系方式和网址，"
-        "与正文违禁同一标准。只根据可见文字判断。"
-    )
-    return build_system_prompt(samples, guideline.strip() + "\n" + extra)
 
 
 def _image_user(transcript: str) -> str:

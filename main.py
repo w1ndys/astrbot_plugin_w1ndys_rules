@@ -206,7 +206,7 @@ class RulesPlugin(Star):
             plan = plan_image_test(
                 self.config, text, bool(payload.get("qr_found"))
             )
-        # 图片转写试跑不走全局触发词
+        # 图片转写有可见文字就送模型，不走触发词
         elif kind == "transcript":
             plan = plan_image_test(self.config, text, False)
         else:

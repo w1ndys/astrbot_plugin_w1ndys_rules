@@ -1,4 +1,4 @@
-# 图片路：二维码直接违禁；转写规则门后才送模型。不走近 7 天活跃豁免。
+# 图片路：二维码直接违禁；转写有可见文字就送模型，不走触发词。
 
 import sys
 import unittest
@@ -18,10 +18,13 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_SAMPLES,
+    IMAGE_TRANSCRIPT_HIT,
     QRCODE_HIT,
 )
 
-LEAK = "我都在6m3p.cc上面约的 全国随时随地都可以玩"
+HIT = "截图里写着广告 加微 6m3p.cc"
+NO_TRIGGER = "我都在6m3p.cc上面约的 全国随时随地都可以玩"
+
 
 
 class Image:
@@ -114,12 +117,24 @@ class ImagePlanTest(unittest.TestCase):
 
     def test_describe_qr_is_not_qr_layer(self) -> None:
         plan = plan_image_test(ready_config(), "图片包含二维码", False)
+        self.assertEqual(plan.status, "ready")
+        self.assertEqual(plan.trigger, IMAGE_TRANSCRIPT_HIT)
+
+    def test_empty_skips(self) -> None:
+        plan = plan_image_test(ready_config(), "  ", False)
         self.assertEqual(plan.status, "skip")
 
-    def test_leak_is_ready(self) -> None:
-        plan = plan_image_test(ready_config(), LEAK, False)
+    def test_no_trigger_is_ready(self) -> None:
+        plan = plan_image_test(ready_config(), NO_TRIGGER, False)
         self.assertEqual(plan.status, "ready")
+        self.assertEqual(plan.trigger, IMAGE_TRANSCRIPT_HIT)
         self.assertIn("6m3p.cc", plan.user)
+
+    def test_system_matches_text_path(self) -> None:
+        plan = plan_image_test(ready_config(), HIT, False)
+        self.assertEqual(plan.status, "ready")
+        self.assertNotIn("海报", plan.system)
+        self.assertIn("招嫖引流算违禁。", plan.system)
 
 
 class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
@@ -154,12 +169,12 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             "",
             self._provider("是"),
             decoder=lambda data: False,
-            transcribe=lambda _event: LEAK,
+            transcribe=lambda _event: HIT,
             activity=FakeActivity(),
         )
         self.assertTrue(handled)
 
-    async def test_dinner_skips(self) -> None:
+    async def test_no_trigger_still_hits(self) -> None:
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
@@ -169,9 +184,25 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             "",
             self._provider("是"),
             decoder=lambda data: False,
-            transcribe=lambda _event: "晚上约饭",
+            transcribe=lambda _event: NO_TRIGGER,
+        )
+        self.assertTrue(handled)
+
+    async def test_empty_transcript_skips(self) -> None:
+        event = FakeEvent()
+        handled, _reply = await handle_forbidden_message(
+            ready_config(),
+            FakeStore(),
+            event,
+            "123",
+            "",
+            self._provider("是"),
+            decoder=lambda data: False,
+            transcribe=lambda _event: "",
         )
         self.assertFalse(handled)
+
+
 
     def _provider(self, text: str):
         async def get_provider():

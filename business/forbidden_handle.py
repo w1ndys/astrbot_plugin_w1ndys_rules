@@ -45,6 +45,7 @@ async def handle_forbidden_message(
         decoder,
         transcribe,
     )
+
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:
         return True, remind
