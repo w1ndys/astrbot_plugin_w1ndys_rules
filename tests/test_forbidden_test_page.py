@@ -13,6 +13,7 @@ class ForbiddenTestPageTest(unittest.TestCase):
     def test_app_script_is_module(self) -> None:
         """普通脚本会在 SDK 注入前执行，必须用 type=module。"""
         html = (PAGE / "index.html").read_text()
-
         self.assertIn('type="module" src="./app.js"', html)
         self.assertNotIn('<script src="./app.js">', html)
+        self.assertIn("antd", html)
+        self.assertIn('"react"', html)

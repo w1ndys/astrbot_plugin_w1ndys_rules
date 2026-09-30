@@ -1,16 +1,32 @@
-const bridge = window.AstrBotPluginPage;
-const textBox = document.getElementById("text");
-const runButton = document.getElementById("run");
-const output = document.getElementById("output");
+// 页面层：违禁词测试。React + Ant Design，经 AstrBot Pages 桥调后端。
+// 组件从 CDN 拉，方便先看效果；离线 WebUI 打不开 CDN 时页面会空白。
+// 不用 JSX：AstrBot 直接加载 module，没有 Babel。
 
-function show(message) {
-  output.textContent = message;
+import React, { useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Alert, Button, Card, ConfigProvider, Input, Space, theme } from "antd";
+
+const h = React.createElement;
+
+// 跟 AstrBot 宿主主题，避免页面亮暗和外壳打架。
+function readIsDark() {
+  const params = new URLSearchParams(window.location.search);
+  // AstrBot iframe 会带 theme=dark / light
+  if (params.get("theme") === "dark" || params.get("isDark") === "true") {
+    return true;
+  }
+  // 明确浅色时不要跟系统走
+  if (params.get("theme") === "light" || params.get("isDark") === "false") {
+    return false;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 function formatResult(result) {
   const status = result && result.status ? String(result.status) : "";
   const trigger = result && result.trigger ? String(result.trigger) : "";
-  const message = result && result.message ? String(result.message) : "没有返回说明。";
+  const message =
+    result && result.message ? String(result.message) : "没有返回说明。";
   const lines = [message];
   // 有触发词就单独列一行，方便对照配置
   if (trigger) {
@@ -23,29 +39,93 @@ function formatResult(result) {
   return lines.join("\n");
 }
 
-async function runTest() {
-  show("测试中…");
-  try {
-    const result = await bridge.apiPost("forbidden/test", {
-      text: textBox.value,
-    });
-    show(formatResult(result));
-  } catch (error) {
-    const message = error && error.message ? error.message : String(error);
-    show("测试失败：" + message);
+// 测试页：输入文本、点测试、展示结果。
+function App() {
+  const [text, setText] = useState("");
+  const [output, setOutput] = useState("还没测。");
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const isDark = useMemo(() => readIsDark(), []);
+  const algorithm = isDark ? theme.darkAlgorithm : theme.defaultAlgorithm;
+  const bridge = window.AstrBotPluginPage;
+
+  useEffect(() => {
+    document.body.classList.toggle("is-dark", isDark);
+    let cancelled = false;
+    async function waitBridge() {
+      // 普通脚本会在 SDK 注入前执行，必须等 bridge.ready
+      if (!bridge) {
+        setFailed(true);
+        setOutput("页面桥接未就绪，请刷新后重试。");
+        return;
+      }
+      await bridge.ready();
+      // 页面已经卸了就不要再改状态
+      if (cancelled) {
+        return;
+      }
+    }
+    waitBridge();
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, isDark]);
+
+  async function runTest() {
+    setLoading(true);
+    setFailed(false);
+    setOutput("测试中…");
+    try {
+      const result = await bridge.apiPost("forbidden/test", { text });
+      setOutput(formatResult(result));
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error);
+      setFailed(true);
+      setOutput("测试失败：" + message);
+    }
+    setLoading(false);
   }
+
+  return h(
+    ConfigProvider,
+    { theme: { algorithm } },
+    h(
+      "main",
+      { className: "page" },
+      h(
+        Card,
+        { title: "违禁词测试" },
+        h(
+          "p",
+          { className: "hint" },
+          "读取全局触发词和 WebUI 里的违禁样本，再问当前 AstrBot 提供商是不是违禁。只在 WebUI 看结果，不会发到 QQ，也不会撤回、禁言或发飞书。",
+        ),
+        h(
+          Space,
+          { direction: "vertical", size: "large", style: { width: "100%" } },
+          h(Input.TextArea, {
+            rows: 6,
+            value: text,
+            placeholder: "把群里可能发出的那句话贴这里",
+            onChange: (event) => setText(event.target.value),
+          }),
+          h(
+            Button,
+            { type: "primary", loading, onClick: runTest },
+            "测试",
+          ),
+          h(Alert, {
+            type: failed ? "error" : "info",
+            message: h("pre", { className: "result" }, output),
+          }),
+        ),
+      ),
+    ),
+  );
 }
 
-async function boot() {
-  // 普通脚本会在 AstrBot 注入的 bridge SDK 之前执行，必须用 module 等到 SDK 就绪。
-  if (!bridge) {
-    show("页面桥接未就绪，请刷新后重试。");
-    return;
-  }
-  await bridge.ready();
-  runButton.addEventListener("click", () => {
-    runTest();
-  });
+const root = document.getElementById("app");
+// 没有挂载点就不要 createRoot，避免控制台报错
+if (root) {
+  createRoot(root).render(h(App));
 }
-
-boot();

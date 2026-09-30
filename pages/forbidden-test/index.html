@@ -5,19 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>违禁词测试</title>
     <link rel="stylesheet" href="./style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+          "react-dom": "https://esm.sh/react-dom@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+          "antd": "https://esm.sh/antd@5.24.0?external=react,react-dom"
+        }
+      }
+    </script>
   </head>
   <body>
-    <main class="page">
-      <h1>违禁词测试</h1>
-      <p class="hint">
-        读取全局触发词和 WebUI 里的违禁样本，再问当前 AstrBot 提供商是不是违禁。
-        只在 WebUI 看结果，不会发到 QQ，也不会撤回、禁言或发飞书。
-      </p>
-      <label for="text">待测文本</label>
-      <textarea id="text" rows="6" placeholder="把群里可能发出的那句话贴这里"></textarea>
-      <button id="run" type="button">测试</button>
-      <pre id="output" class="output">还没测。</pre>
-    </main>
+    <!-- 页面层：违禁词测试。React + Ant Design，脚本必须 type=module。 -->
+    <div id="app"></div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
