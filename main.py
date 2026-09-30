@@ -47,12 +47,14 @@ from .business.forbidden_judge import (
     plan_forbidden_test,
     test_result_payload,
 )
+from .business.forbidden_log_page import get_log, list_logs
 from .business.group_card import handle_group_card
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import delete_rule, list_rules, write_rule
 from .business.keyword_page import list_keywords, remove_keyword, save_keyword
 from .business.keyword_reply import pick_reply
+from .business.settings_page import get_settings, save_settings
 from .business.verify_action import (
     mute_user,
     recall_message_id,
@@ -108,6 +110,8 @@ class RulesPlugin(Star):
         self._start_remind_loop()
         self._register_forbidden_page()
         self._register_keyword_pages()
+        self._register_log_pages()
+        self._register_settings_pages()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
 
     def _start_remind_loop(self) -> None:
@@ -271,6 +275,88 @@ class RulesPlugin(Star):
             return error_response("请求体必须是 JSON 对象", status_code=400)
         ok, message = await remove_keyword(self.keywords, payload)
         # 没这条或字段空用 400
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    def _register_log_pages(self) -> None:
+        """注册违禁日志只读接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/forbidden-log/list",
+            self.page_forbidden_log_list,
+            ["POST"],
+            "违禁日志列表",
+        )
+        register(
+            f"/{PLUGIN_NAME}/forbidden-log/get",
+            self.page_forbidden_log_get,
+            ["POST"],
+            "违禁日志详情",
+        )
+
+    async def page_forbidden_log_list(self):
+        """WebUI：按群、成员、原因过滤后分页列出日志。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出筛选条件
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        return json_response(list_logs(self.forbidden_logs, payload))
+
+    async def page_forbidden_log_get(self):
+        """WebUI：按 id 取一条原文。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出 id
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = get_log(self.forbidden_logs, payload)
+        # 没有这条用 404
+        if not ok:
+            return error_response(str(result), status_code=404)
+        return json_response(result)
+
+    def _register_settings_pages(self) -> None:
+        """注册全局配置接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/settings/get",
+            self.page_settings_get,
+            ["POST"],
+            "读取非密钥全局配置",
+        )
+        register(
+            f"/{PLUGIN_NAME}/settings/save",
+            self.page_settings_save,
+            ["POST"],
+            "写回非密钥全局配置",
+        )
+
+    async def page_settings_get(self):
+        """WebUI：读当前非密钥 schema 字段。"""
+        from astrbot.api.web import json_response
+
+        return json_response(get_settings(self.config))
+
+    async def page_settings_save(self):
+        """WebUI：写回非密钥字段。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就写不回去
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = save_settings(self.config, payload)
+        # 校验失败用 400
         if not ok:
             return error_response(message, status_code=400)
         return json_response({"message": message})

@@ -92,7 +92,7 @@ GROUP_CARD_HIT = "群名片"
 FORBIDDEN_REASON_MODEL = "model"
 FORBIDDEN_REASON_GROUP_CARD = "group_card"
 FORBIDDEN_REASON_QRCODE = "qrcode"
-# WebUI 日志表默认每页条数。这一刀只给数据层测试用。
+# WebUI 日志表默认每页条数。
 FORBIDDEN_LOG_PAGE_SIZE = 20
 
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
