@@ -1,5 +1,5 @@
 # 业务层：群消息要不要走违禁判断、命中后怎么处置。
-# 只有 WebUI 名单里的群、不是群管、不是近 7 天活跃、命中触发词、模型整句回答「是」才处置。
+# 图片路不走近 7 天活跃豁免；文本路仍要触发词和活跃豁免。
 # 测试页不走这里。
 
 from ..data.forbidden_store import ForbiddenStore
@@ -7,6 +7,7 @@ from ..entity.constants import CFG_FORBIDDEN_GROUPS, FORBIDDEN_REASON_MODEL
 from .activity import is_recently_active
 from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
+from .forbidden_image import handle_forbidden_images
 from .forbidden_judge import complete_yes_no, plan_forbidden_test
 from .qq_role import is_qq_group_staff
 
@@ -21,6 +22,8 @@ async def handle_forbidden_message(
     poster=None,
     activity=None,
     log_store=None,
+    decoder=None,
+    transcribe=None,
 ) -> tuple[bool, str]:
     """处理一条群消息的违禁判断。handled=True 时入口要停 LLM。
 
@@ -32,7 +35,45 @@ async def handle_forbidden_message(
     # QQ 群主或管理员默认安全，不送模型也不处置
     if is_qq_group_staff(event):
         return False, ""
-    # 近 7 天本群发过言的熟人跳过模型，少消耗、少误伤
+    handled, remind = await handle_forbidden_images(
+        event,
+        config,
+        group_id,
+        get_provider,
+        poster,
+        log_store,
+        decoder,
+        transcribe,
+    )
+    # 二维码或图片模型已经处置，文本路不再跑
+    if handled:
+        return True, remind
+    return await _handle_forbidden_text(
+        config,
+        store,
+        event,
+        group_id,
+        text,
+        get_provider,
+        poster,
+        activity,
+        log_store,
+    )
+
+
+async def _handle_forbidden_text(
+    config: object,
+    store: ForbiddenStore,
+    event: object,
+    group_id: str,
+    text: str,
+    get_provider,
+    poster,
+    activity,
+    log_store,
+) -> tuple[bool, str]:
+    """文本路：活跃豁免、触发词、整句是。"""
+    # 近 7 天本群发过言的熟人跳过文本模型，图片路已经跑过
     if activity is not None and is_recently_active(
         activity, group_id, _event_user_id(event)
     ):

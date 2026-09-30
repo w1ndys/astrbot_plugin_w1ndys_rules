@@ -20,6 +20,7 @@ from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogSto
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_REASON_GROUP_CARD,
+    FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_MODEL,
     FORBIDDEN_REASON_QRCODE,
 )
@@ -113,7 +114,12 @@ class ReasonTextTest(unittest.TestCase):
         self.assertEqual(reason_text(FORBIDDEN_REASON_MODEL, "广告"), "文本模型命中：广告")
         self.assertEqual(reason_text(FORBIDDEN_REASON_GROUP_CARD, "群名片"), "群名片拦截")
         self.assertEqual(reason_text(FORBIDDEN_REASON_QRCODE, ""), "二维码直接违禁")
+        self.assertEqual(
+            reason_text(FORBIDDEN_REASON_IMAGE_MODEL, ""),
+            "图片转写命中，模型判定是",
+        )
         self.assertEqual(reason_text("other", "触发"), "触发")
+
 
 
 class CollectPayloadTest(unittest.IsolatedAsyncioTestCase):

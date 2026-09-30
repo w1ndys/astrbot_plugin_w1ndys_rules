@@ -42,6 +42,7 @@ from .business.forbidden_admin import (
     update_item,
 )
 from .business.forbidden_handle import handle_forbidden_message
+from .business.forbidden_image import plan_image_test
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
@@ -198,8 +199,18 @@ class RulesPlugin(Star):
         # 不是对象就取不出 text
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
+        kind = str(payload.get("kind") or "text")
         text = str(payload.get("text") or "")
-        plan = plan_forbidden_test(self.config, self.forbidden, text)
+        # 二维码试跑只认解码层，不认描述
+        if kind == "qr":
+            plan = plan_image_test(
+                self.config, text, bool(payload.get("qr_found"))
+            )
+        # 图片转写试跑不走全局触发词
+        elif kind == "transcript":
+            plan = plan_image_test(self.config, text, False)
+        else:
+            plan = plan_forbidden_test(self.config, self.forbidden, text)
         # 没到模型这一步，直接把原因回给页面
         if plan.status != "ready":
             return json_response(test_result_payload(plan, "skip"))
@@ -393,27 +404,24 @@ class RulesPlugin(Star):
             _stop_llm(event)
             await self._note_speak(group_id, event)
             return
-        # 图片、语音这类没有文本的消息没得比，直接跳过
-        if not text:
-            return
         # 斜杠开头的是别的插件或默认前缀指令，不拿来当关键词或本插件命令
         if text.startswith("/"):
             return
-        handled, reply = await handle_admin_command(
-            self.welcome,
-            event,
-            group_id,
-            text,
-        )
-
-        # 管理命令无论有没有回包都要停 LLM，避免带前缀时模型再接一句
-        if handled:
-            # 管理员有文案；群员误发静默
-            if reply:
-                yield event.plain_result(reply)
-            _stop_llm(event)
-            await self._note_speak(group_id, event)
-            return
+        if text:
+            handled, reply = await handle_admin_command(
+                self.welcome,
+                event,
+                group_id,
+                text,
+            )
+            # 管理命令无论有没有回包都要停 LLM，避免带前缀时模型再接一句
+            if handled:
+                # 管理员有文案；群员误发静默
+                if reply:
+                    yield event.plain_result(reply)
+                _stop_llm(event)
+                await self._note_speak(group_id, event)
+                return
         handled, reply = await handle_forbidden_message(
             self.config,
             self.forbidden,

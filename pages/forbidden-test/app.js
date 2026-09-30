@@ -4,7 +4,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Alert, Button, Card, ConfigProvider, Input, Space, theme } from "antd";
+import { Alert, Button, Card, ConfigProvider, Input, Select, Space, theme } from "antd";
 
 const h = React.createElement;
 
@@ -41,6 +41,8 @@ function formatResult(result) {
 
 // 测试页：输入文本、点测试、展示结果。
 function App() {
+  const [kind, setKind] = useState("text");
+  const [qrFound, setQrFound] = useState(false);
   const [text, setText] = useState("");
   const [output, setOutput] = useState("还没测。");
   const [loading, setLoading] = useState(false);
@@ -53,14 +55,12 @@ function App() {
     document.body.classList.toggle("is-dark", isDark);
     let cancelled = false;
     async function waitBridge() {
-      // 普通脚本会在 SDK 注入前执行，必须等 bridge.ready
       if (!bridge) {
         setFailed(true);
         setOutput("页面桥接未就绪，请刷新后重试。");
         return;
       }
       await bridge.ready();
-      // 页面已经卸了就不要再改状态
       if (cancelled) {
         return;
       }
@@ -76,7 +76,11 @@ function App() {
     setFailed(false);
     setOutput("测试中…");
     try {
-      const result = await bridge.apiPost("forbidden/test", { text });
+      const result = await bridge.apiPost("forbidden/test", {
+        kind,
+        text,
+        qr_found: qrFound,
+      });
       setOutput(formatResult(result));
     } catch (error) {
       const message = error && error.message ? error.message : String(error);
@@ -98,17 +102,33 @@ function App() {
         h(
           "p",
           { className: "hint" },
-          "读取全局触发词和 WebUI 里的违禁样本，再问当前 AstrBot 提供商是不是违禁。只在 WebUI 看结果，不会发到 QQ，也不会撤回、禁言或发飞书。",
+          "文本路要先命中触发词。图片转写走独立规则门。二维码试跑只认解码层检出。不会撤回、禁言或发飞书。",
         ),
         h(
           Space,
           { direction: "vertical", size: "large", style: { width: "100%" } },
+          h(Select, {
+            value: kind,
+            options: [
+              { value: "text", label: "文本" },
+              { value: "transcript", label: "图片转写" },
+              { value: "qr", label: "二维码检出" },
+            ],
+            onChange: (value) => setKind(value),
+          }),
           h(Input.TextArea, {
             rows: 6,
             value: text,
-            placeholder: "把群里可能发出的那句话贴这里",
+            placeholder: "文本或图片转写贴这里",
             onChange: (event) => setText(event.target.value),
           }),
+          h(
+            Button,
+            {
+              onClick: () => setQrFound(!qrFound),
+            },
+            qrFound ? "二维码：已检出" : "二维码：未检出",
+          ),
           h(
             Button,
             { type: "primary", loading, onClick: runTest },

@@ -7,6 +7,7 @@ import json
 from ..data.forbidden_log_store import ForbiddenLogStore
 from ..entity.constants import (
     FORBIDDEN_REASON_GROUP_CARD,
+    FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_MODEL,
     FORBIDDEN_REASON_QRCODE,
 )
@@ -28,6 +29,9 @@ def reason_text(reason_code: str, trigger: str) -> str:
     # 本地解出二维码，不经模型
     if reason_code == FORBIDDEN_REASON_QRCODE:
         return "二维码直接违禁"
+    # 图片转写后模型判定「是」
+    if reason_code == FORBIDDEN_REASON_IMAGE_MODEL:
+        return "图片转写命中，模型判定是"
     # 未知码仍尽量留下触发名，避免日志空白
     if trigger:
         return trigger

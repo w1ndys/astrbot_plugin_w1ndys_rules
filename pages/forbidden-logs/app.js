@@ -26,6 +26,7 @@ const REASON_OPTIONS = [
   { value: "model", label: "文本模型" },
   { value: "group_card", label: "群名片" },
   { value: "qrcode", label: "二维码" },
+  { value: "image_model", label: "图片转写" },
 ];
 
 function readIsDark() {

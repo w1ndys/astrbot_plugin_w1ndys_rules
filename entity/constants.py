@@ -92,6 +92,9 @@ GROUP_CARD_HIT = "群名片"
 FORBIDDEN_REASON_MODEL = "model"
 FORBIDDEN_REASON_GROUP_CARD = "group_card"
 FORBIDDEN_REASON_QRCODE = "qrcode"
+FORBIDDEN_REASON_IMAGE_MODEL = "image_model"
+# 飞书和日志里的二维码触发名。
+QRCODE_HIT = "图片含二维码"
 # WebUI 日志表默认每页条数。
 FORBIDDEN_LOG_PAGE_SIZE = 20
 
