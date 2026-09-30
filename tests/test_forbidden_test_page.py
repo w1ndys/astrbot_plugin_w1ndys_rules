@@ -4,21 +4,20 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "dashboard" / "src"
 PAGE = ROOT / "pages" / "console"
 
 
 class ForbiddenTestPageTest(unittest.TestCase):
-    """验证测试页脚本加载顺序不会早于 bridge SDK。"""
+    """验证测试页脚本和三种试跑。"""
 
-    def test_app_script_is_module(self) -> None:
-        """普通脚本会在 SDK 注入前执行，必须用 type=module。"""
+    def test_app_script_is_classic_defer(self) -> None:
         html = (PAGE / "index.html").read_text()
-        self.assertIn('type="module" src="./app.js"', html)
-        self.assertNotIn('<script src="./app.js">', html)
+        self.assertIn('script defer src="./assets/index.js"', html)
 
     def test_kinds_are_in_app(self) -> None:
         """三种试跑都要能从页面选到。"""
-        app = (PAGE / "forbidden-test-view.js").read_text()
+        app = (SRC / "forbidden-test-view.jsx").read_text()
         self.assertIn('value: "text"', app)
         self.assertIn('value: "transcript"', app)
         self.assertIn('value: "qr"', app)

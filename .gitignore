@@ -15,3 +15,6 @@ venv/
 *.db
 *.db-wal
 *.db-shm
+
+# Pages 前端：源码在 dashboard/，产物进 pages/console/
+dashboard/node_modules/

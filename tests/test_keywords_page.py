@@ -8,10 +8,9 @@ PAGE = ROOT / "pages" / "console"
 
 
 class KeywordPageAssetsTest(unittest.TestCase):
-    """验证关键词表脚本加载顺序不会早于 bridge SDK。"""
+    """验证产物是 IIFE，不靠 CDN。"""
 
-    def test_app_script_is_module(self) -> None:
-        """普通脚本会在 SDK 注入前执行，必须用 type=module。"""
+    def test_app_script_is_classic_defer(self) -> None:
         html = (PAGE / "index.html").read_text()
-        self.assertIn('type="module" src="./app.js"', html)
-        self.assertNotIn('<script src="./app.js">', html)
+        self.assertIn('script defer src="./assets/index.js"', html)
+        self.assertNotIn('type="module" src="./app.js"', html)

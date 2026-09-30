@@ -1,9 +1,7 @@
 // 页面层：关键词表。一张表管全部群。
 
-import React, { useCallback, useEffect, useState } from "./vendor/react.js";
-import { Button, Card, Input, Pagination, Space, Table, message } from "./vendor/antd.js";
-
-const h = React.createElement;
+import { useCallback, useEffect, useState } from "react";
+import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
 
 export function KeywordsView() {
   const [filter, setFilter] = useState("");
@@ -95,79 +93,59 @@ export function KeywordsView() {
     {
       title: "操作",
       key: "action",
-      render: (_, row) =>
-        h(Button, { type: "link", danger: true, onClick: () => deleteRow(row) }, "删除"),
+      render: (_, row) => (
+        <Button type="link" danger onClick={() => deleteRow(row)}>
+          删除
+        </Button>
+      ),
     },
   ];
 
-  return h(
-    Card,
-    { title: "关键词回复" },
-    h(
-      "p",
-      { className: "hint" },
-      "一张表管全部群。开启仍看 WebUI「开启关键词回复的群」。群里不再认「关键词 批量」。唤醒后的增删改查还在。",
-    ),
-    h(
-      Space,
-      { wrap: true, style: { marginBottom: 16 } },
-      h(Input, {
-        style: { width: 180 },
-        placeholder: "按群号过滤，空则全部",
-        value: filter,
-        onChange: (event) => setFilter(event.target.value),
-      }),
-      h(
-        Button,
-        {
-          onClick: () => {
+  return (
+    <Card title="关键词回复">
+      <p className="hint">
+        一张表管全部群。开启仍看 WebUI「开启关键词回复的群」。群里不再认「关键词 批量」。唤醒后的增删改查还在。
+      </p>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input
+          style={{ width: 180 }}
+          placeholder="按群号过滤，空则全部"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <Button
+          onClick={() => {
             setApplied(filter.trim());
             load(1, pageSize, filter.trim());
-          },
-        },
-        "筛选",
-      ),
-    ),
-    h(
-      Space,
-      { wrap: true, style: { marginBottom: 16 } },
-      h(Input, {
-        style: { width: 140 },
-        placeholder: "群号",
-        value: groupId,
-        onChange: (event) => setGroupId(event.target.value),
-      }),
-      h(Input, {
-        style: { width: 160 },
-        placeholder: "关键词",
-        value: keyword,
-        onChange: (event) => setKeyword(event.target.value),
-      }),
-      h(Input, {
-        style: { width: 220 },
-        placeholder: "回复",
-        value: reply,
-        onChange: (event) => setReply(event.target.value),
-      }),
-      h(Button, { type: "primary", onClick: saveRow }, "保存"),
-    ),
-    h(Table, {
-      rowKey: (row) => row.group_id + "\0" + row.keyword,
-      columns,
-      dataSource: items,
-      loading,
-      pagination: false,
-    }),
-    h(
-      "div",
-      { className: "pager" },
-      h(Pagination, {
-        current: page,
-        pageSize,
-        total,
-        showSizeChanger: true,
-        onChange: (nextPage, nextSize) => load(nextPage, nextSize, applied),
-      }),
-    ),
+          }}
+        >
+          筛选
+        </Button>
+      </Space>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input style={{ width: 140 }} placeholder="群号" value={groupId} onChange={(event) => setGroupId(event.target.value)} />
+        <Input style={{ width: 160 }} placeholder="关键词" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+        <Input style={{ width: 220 }} placeholder="回复" value={reply} onChange={(event) => setReply(event.target.value)} />
+        <Button type="primary" onClick={saveRow}>
+          保存
+        </Button>
+      </Space>
+      <Table
+        rowKey={(row) => row.group_id + "\0" + row.keyword}
+        columns={columns}
+        dataSource={items}
+        loading={loading}
+        pagination={false}
+      />
+      <div className="pager">
+        <Pagination
+          current={page}
+          pageSize={pageSize}
+          total={total}
+          showSizeChanger
+          onChange={(nextPage, nextSize) => load(nextPage, nextSize, applied)}
+        />
+      </div>
+    </Card>
   );
 }

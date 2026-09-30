@@ -79,6 +79,7 @@ AstrBot 解析后的纯文本，不是 OneBot 原始 `raw_message`，所以带 @
 
 ## 开发
 
+改 Pages：`cd dashboard && npm install && npm run build`，产物在 `pages/console/`。
 改完插件后需要让 AstrBot 重新加载。注意 AstrBot 的热重载被环境变量守卫：
 
 ```python
