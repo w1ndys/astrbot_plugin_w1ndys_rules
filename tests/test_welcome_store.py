@@ -1,4 +1,4 @@
-# 欢迎语文案按群存取。没设过是空串，群与群互不影响。
+# 欢迎语文案按群存取。没设过是 None，空串表示本群关闭。
 
 import sys
 import tempfile
@@ -23,12 +23,16 @@ class WelcomeStoreTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_missing_group_is_empty(self) -> None:
-        self.assertEqual(self.store.get_content("123"), "")
+    def test_missing_group_is_none(self) -> None:
+        self.assertIsNone(self.store.get_content("123"))
 
     async def test_set_then_get(self) -> None:
         await self.store.set_content("123", "欢迎入群")
         self.assertEqual(self.store.get_content("123"), "欢迎入群")
+
+    async def test_empty_string_is_stored(self) -> None:
+        await self.store.set_content("123", "")
+        self.assertEqual(self.store.get_content("123"), "")
 
     async def test_groups_are_isolated(self) -> None:
         await self.store.set_content("111", "甲群欢迎")

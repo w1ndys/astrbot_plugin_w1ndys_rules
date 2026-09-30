@@ -1,7 +1,8 @@
 # 入口层：向 AstrBot 注册群消息监听、关键词/违禁配置工具，以及违禁词测试页。
 #
-# 群员命中关键词、管理员批量/欢迎语设查，都由代码直接回复，不经过模型；回复完拦住事件，
+# 群员命中关键词、管理员关键词批量，都由代码直接回复，不经过模型；回复完拦住事件，
 # 模型不会再在后面补一句。这些命令不走指令过滤器，所以不需要唤醒前缀。
+
 
 # 违禁词测试只走插件 Pages，不经 QQ，也不撤回、禁言、发飞书。
 #
@@ -25,13 +26,15 @@ from astrbot.api.star import Context, Star, StarTools
 
 from .business.activity import record_speak
 from .business.admin_command import handle_admin_command
-from .business.debug_payload import inspect_payload
 from .business.blacklist_admin import (
     REJECT_MESSAGE as BLACKLIST_REJECT,
+)
+from .business.blacklist_admin import (
     add_user,
     delete_user,
     list_users,
 )
+from .business.debug_payload import inspect_payload
 from .business.forbidden_admin import (
     add_item,
     delete_item,
@@ -39,12 +42,12 @@ from .business.forbidden_admin import (
     update_item,
 )
 from .business.forbidden_handle import handle_forbidden_message
-from .business.group_card import handle_group_card
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
     test_result_payload,
 )
+from .business.group_card import handle_group_card
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import delete_rule, list_rules, write_rule
@@ -58,8 +61,8 @@ from .business.verify_action import (
 from .business.verify_admin import pass_user, reject_user, scan_users
 from .business.verify_handle import PASS_REPLY, handle_verify_private
 from .business.verify_join import start_pending
-from .business.verify_remind import send_due_remind
 from .business.verify_leave import drop_pending, is_group_decrease
+from .business.verify_remind import send_due_remind
 from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
@@ -84,17 +87,18 @@ class RulesPlugin(Star):
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
-        # 群名单、判断准则、样本、禁言秒数、提醒和 webhook 走 WebUI；触发词全局进数据库。
+        # 群名单和全局欢迎语走 WebUI；本群覆盖文案、触发词进数据库。
+
 
         self.config = config
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
         self.forbidden = ForbiddenStore(db_path)
-        self.welcome = WelcomeStore(db_path)
         self.verify = VerifyStore(db_path)
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
         self.activity = ActivityStore(db_path)
+        self.welcome = WelcomeStore(db_path)
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
         self._remind_task = None
@@ -122,6 +126,7 @@ class RulesPlugin(Star):
                 raise
             except Exception:  # noqa: BLE001 - 单次扫失败不能把循环打死
                 # 这一拍出错，下一拍再扫，避免一人坏数据停掉全部提醒
+                logger.exception("[rules] 扫验证提醒失败")
                 continue
 
     async def _tick_reminds(self, now_ts: int = 0) -> None:
@@ -141,6 +146,7 @@ class RulesPlugin(Star):
                 )
             except Exception:  # noqa: BLE001 - 一个人失败不影响别人
                 # 这个人这一拍跳过，其余到期的人继续发
+                logger.exception("[rules] 给 %s/%s 发验证提醒失败", group_id, user_id)
                 continue
 
     def _remember_bot(self, event: object) -> None:
@@ -333,6 +339,7 @@ class RulesPlugin(Star):
             _self_id_of(event),
         )
         welcome = pick_welcome(self.welcome, self.config, group_id)
+
         verify = await start_pending(
             self.verify,
             self.config,

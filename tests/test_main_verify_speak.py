@@ -182,10 +182,10 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.context = None
         self.plugin.config = {}
         self.plugin.keywords = KeywordStore(db_path)
-        self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.forbidden = ForbiddenStore(db_path)
         self.plugin.activity = ActivityStore(db_path)
+        self.plugin.welcome = WelcomeStore(db_path)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

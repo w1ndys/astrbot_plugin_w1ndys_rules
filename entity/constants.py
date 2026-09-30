@@ -40,8 +40,8 @@ DEFAULT_WAKE_PREFIX = "/"
 # 功能开/关已迁到 WebUI 群号名单，群里不再认「开」「关」。
 CMD_KEYWORD_BATCH = "关键词 批量"
 CMD_WELCOME_SET = "欢迎语 设置"
-# 整句相等才查当前文案，避免把「欢迎语 设置」当成查询
 CMD_WELCOME_SHOW = "欢迎语"
+
 
 # 上线链最多往上追几层。出现环或超过就截断，避免死循环。
 INVITE_UPLINE_LIMIT = 20
@@ -50,9 +50,11 @@ INVITE_DOWNLINE_LIMIT = 30
 
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500
-
-# 开了开关但还没设文案时，入群发送这句。沿用旧 GroupWelcome 的默认句。
+# WebUI：没单独设过的开启群用这句全局文案。留空则用默认句。
+CFG_WELCOME_TEXT = "welcome_text"
+# 开了名单但还没填文案时，入群发送这句。沿用旧 GroupWelcome 的默认句。
 DEFAULT_WELCOME_TEXT = "欢迎入群~"
+
 
 # 违禁配置条目类型。触发词决定是否送模型；样本已改回 WebUI，库表仍保留 kind 字段。
 FORBIDDEN_KIND_TRIGGER = "trigger"

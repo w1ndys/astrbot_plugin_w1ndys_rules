@@ -1,4 +1,4 @@
-# 管理命令：功能开/关不再认；只测批量、欢迎语设查和权限静默。
+# 管理命令：欢迎语设/查重新认；功能开/关仍不认；批量只认 AstrBot 管理员。
 
 import sys
 import tempfile
@@ -17,11 +17,7 @@ from astrbot_plugin_w1ndys_rules.business.admin_command import (
 )
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
-from astrbot_plugin_w1ndys_rules.entity.constants import (
-    CMD_KEYWORD_BATCH,
-    CMD_WELCOME_SET,
-    CMD_WELCOME_SHOW,
-)
+from astrbot_plugin_w1ndys_rules.entity.constants import CMD_KEYWORD_BATCH
 
 
 class FakeContext:
@@ -39,14 +35,24 @@ class FakeContext:
         return {"wake_prefix": self._prefixes}
 
 
-class FakeEvent:
-    """测试用的发言人。只提供 is_admin。"""
+class FakeMessage:
+    def __init__(self, raw) -> None:
+        self.raw_message = raw
 
-    def __init__(self, admin: bool = True) -> None:
+
+class FakeEvent:
+    """测试用的发言人。只提供 is_admin 和可选群角色。"""
+
+    def __init__(self, admin: bool = True, role: str = "") -> None:
         self._admin = admin
+        # 没有角色时读不到 sender，当普通群员
+        if role:
+            self.message_obj = FakeMessage({"sender": {"role": role}})
+        else:
+            self.message_obj = FakeMessage(None)
 
     def is_admin(self) -> bool:
-        """当前发言人是不是管理员。"""
+        """当前发言人是不是 AstrBot 管理员。"""
         return self._admin
 
 
@@ -63,30 +69,21 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     def test_switch_phrases_are_not_commands(self) -> None:
-        """群里发开/关不再当管理命令，开关只认 WebUI 名单。"""
+        """群里发开/关不再当管理命令。"""
         self.assertEqual(parse_admin_command("关键词 开"), "")
-        self.assertEqual(parse_admin_command("关键词 关"), "")
-        self.assertEqual(parse_admin_command("违禁词 开"), "")
         self.assertEqual(parse_admin_command("欢迎语 开"), "")
-        self.assertEqual(parse_admin_command("入群验证 开"), "")
-        self.assertEqual(parse_admin_command("邀请树 开"), "")
+
+    def test_parse_welcome_headers(self) -> None:
+        self.assertEqual(parse_admin_command("欢迎语"), "welcome_show")
+        self.assertEqual(
+            parse_admin_command("欢迎语 设置 欢迎入群~"), "welcome_set"
+        )
 
     def test_parse_batch_header(self) -> None:
         self.assertEqual(parse_admin_command(CMD_KEYWORD_BATCH), "batch")
         self.assertEqual(parse_admin_command("关键词 批量\n原神|好玩"), "batch")
         self.assertEqual(parse_admin_command("关键词 批量 原神|好玩"), "batch")
         self.assertEqual(parse_admin_command("关键词 批量导入"), "")
-
-    def test_parse_welcome_show_must_be_exact(self) -> None:
-        self.assertEqual(parse_admin_command(CMD_WELCOME_SHOW), "welcome_show")
-        self.assertEqual(parse_admin_command("欢迎语 开 吧"), "")
-        self.assertEqual(parse_admin_command("欢迎语设置"), "")
-
-    def test_parse_welcome_set_header(self) -> None:
-        self.assertEqual(parse_admin_command(CMD_WELCOME_SET), "welcome_set")
-        self.assertEqual(parse_admin_command("欢迎语 设置 欢迎入群~"), "welcome_set")
-        self.assertEqual(parse_admin_command("欢迎语 设置\n欢迎入群~"), "welcome_set")
-        self.assertEqual(parse_admin_command("欢迎语 设置导入"), "")
 
     async def test_plain_text_is_not_handled(self) -> None:
         handled, reply = await handle_admin_command(
@@ -100,19 +97,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(reply, "")
 
-    async def test_switch_phrase_is_not_handled(self) -> None:
-        handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
-            self.welcome,
-            FakeEvent(admin=True),
-            self.group_id,
-            "关键词 开",
-        )
-        self.assertFalse(handled)
-        self.assertEqual(reply, "")
-
-    async def test_welcome_set_and_show(self) -> None:
+    async def test_welcome_set_is_handled(self) -> None:
         handled, reply = await handle_admin_command(
             self.context,
             self.keywords,
@@ -122,20 +107,10 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             "欢迎语 设置 欢迎入群~",
         )
         self.assertTrue(handled)
-        self.assertIn("已设置本群欢迎语", reply)
         self.assertIn("欢迎入群~", reply)
-        handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
-            self.welcome,
-            FakeEvent(admin=True),
-            self.group_id,
-            CMD_WELCOME_SHOW,
-        )
-        self.assertTrue(handled)
-        self.assertEqual(reply, "本群欢迎语：\n欢迎入群~")
+        self.assertEqual(self.welcome.get_content(self.group_id), "欢迎入群~")
 
-    async def test_welcome_non_admin_is_silent(self) -> None:
+    async def test_welcome_stranger_is_silent(self) -> None:
         handled, reply = await handle_admin_command(
             self.context,
             self.keywords,
@@ -146,3 +121,16 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(handled)
         self.assertEqual(reply, "")
+        self.assertIsNone(self.welcome.get_content(self.group_id))
+
+    async def test_qq_admin_can_set_welcome(self) -> None:
+        handled, reply = await handle_admin_command(
+            self.context,
+            self.keywords,
+            self.welcome,
+            FakeEvent(admin=False, role="admin"),
+            self.group_id,
+            "欢迎语 设置 管理写的",
+        )
+        self.assertTrue(handled)
+        self.assertIn("管理写的", reply)

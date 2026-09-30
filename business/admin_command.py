@@ -1,10 +1,11 @@
 # 业务层：群里直接发的管理命令，不走 AstrBot 指令过滤器，所以不需要唤醒前缀。
 #
-# 批量、欢迎语设/查是代码路径，和群员命中关键词一类。管理员自然语言
+# 关键词批量、欢迎语设/查是代码路径，和群员命中关键词一类。管理员自然语言
 # 增删改查仍要唤醒，那是进 Agent 的门，不在这里处理。
 # 功能开/关已迁到 WebUI 群号名单，这里不再认「开」「关」。
 #
-# 群员误发要静默：这条路径会看到所有群消息，回「只有管理员」会刷屏。
+# 无权的人误发要静默：这条路径会看到所有群消息，回拒绝语会刷屏。
+# 关键词批量只认 AstrBot 管理员；欢迎语还认本群群主和管理员。
 
 from ..data.keyword_store import KeywordStore
 from ..data.welcome_store import WelcomeStore
@@ -15,7 +16,7 @@ from ..entity.constants import (
 )
 from .auth import is_admin
 from .keyword_batch import import_rules
-from .welcome_admin import set_welcome, show_welcome
+from .welcome_admin import can_edit_welcome, set_welcome, show_welcome
 
 
 def _has_command_header(first: str, cmd: str) -> bool:
@@ -24,10 +25,11 @@ def _has_command_header(first: str, cmd: str) -> bool:
     if first == cmd:
         return True
     # 命令后面必须隔开，避免「关键词 批量导入」这种连在一起的字被误认
-    if first.startswith(cmd) and len(first) > len(cmd) and first[len(cmd)] in " \t":
-        return True
-    # 对不上命令头，这条不是该命令
-    return False
+    return (
+        first.startswith(cmd)
+        and len(first) > len(cmd)
+        and first[len(cmd)] in (" ", "\t")
+    )
 
 
 def parse_admin_command(text: str) -> str:
@@ -62,29 +64,27 @@ async def handle_admin_command(
     # 不是管理命令，交给后面的关键词匹配
     if not action:
         return False, ""
-    # 群员误发静默，也不让这条再去撞关键词或进模型
-    if not is_admin(event):
+    # 关键词批量只认 AstrBot 管理员；群员误发静默
+    if action == "batch":
+        # 不是 AstrBot 管理员不能批量改关键词
+        if not is_admin(event):
+            return True, ""
+        return True, await import_rules(context, keywords, event, group_id, text)
+    # 欢迎语：无权误发静默，也不让这条再去撞关键词或进模型
+    if not can_edit_welcome(event):
         return True, ""
-    return True, await _run_admin_action(
-        action, context, keywords, welcome, event, group_id, text
-    )
+    return True, await _run_welcome_action(action, welcome, event, group_id, text)
 
 
-async def _run_admin_action(
+async def _run_welcome_action(
     action: str,
-    context: object,
-    keywords: KeywordStore,
     welcome: WelcomeStore,
     event: object,
     group_id: str,
     text: str,
 ) -> str:
-    """管理员已经确认后，按动作执行并返回群里要发的文案。"""
-    # 查看本群已保存的欢迎语
+    """权限已确认后，查看或设置本群欢迎语。"""
+    # 查看本群独立配置
     if action == "welcome_show":
         return show_welcome(welcome, event, group_id)
-    # 设置本群欢迎语文案
-    if action == "welcome_set":
-        return await set_welcome(welcome, event, group_id, text)
-    # 剩下只可能是关键词批量，parse 不会给出别的动作名
-    return await import_rules(context, keywords, event, group_id, text)
+    return await set_welcome(welcome, event, group_id, text)

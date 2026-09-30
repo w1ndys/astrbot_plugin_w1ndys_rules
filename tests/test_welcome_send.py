@@ -1,7 +1,6 @@
-# 入群欢迎：名单外不发；没设文案用默认句。
+# 入群欢迎：名单外不发；独立空串关闭；没独立文案用全局或默认句。
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,11 +14,23 @@ from astrbot_plugin_w1ndys_rules.business.welcome_send import (
     is_group_increase,
     pick_welcome,
 )
-from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_WELCOME_GROUPS,
+    CFG_WELCOME_TEXT,
     DEFAULT_WELCOME_TEXT,
+    WELCOME_MAX_LEN,
 )
+
+
+class FakeWelcome:
+    """测试替身：固定返回本群独立配置。"""
+
+    def __init__(self, content: str | None = None) -> None:
+        self.content = content
+
+    def get_content(self, group_id: str) -> str | None:
+        """返回构造时写入的独立配置。"""
+        return self.content
 
 
 class FakeMessage:
@@ -36,16 +47,7 @@ class FakeEvent:
             self.message_obj = None
 
 
-class WelcomeSendTest(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        db_path = Path(self._tmp.name) / "rules.db"
-        self.welcome = WelcomeStore(db_path)
-        self.on = {CFG_WELCOME_GROUPS: ["123"]}
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
+class WelcomeSendTest(unittest.TestCase):
     def test_notice_is_group_increase(self) -> None:
         event = FakeEvent({"notice_type": "group_increase", "user_id": "10001"})
         self.assertTrue(is_group_increase(event))
@@ -55,19 +57,34 @@ class WelcomeSendTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(is_group_increase(event))
         self.assertFalse(is_group_increase(FakeEvent(has_obj=False)))
 
-    async def test_off_sends_nothing(self) -> None:
-        await self.welcome.set_content("123", "欢迎入群~")
-        self.assertEqual(pick_welcome(self.welcome, {}, "123"), "")
+    def test_off_sends_nothing(self) -> None:
+        config = {CFG_WELCOME_TEXT: "请先看群规"}
+        self.assertEqual(pick_welcome(FakeWelcome(), config, "123"), "")
 
-    async def test_on_without_text_uses_default(self) -> None:
+    def test_on_without_text_uses_default(self) -> None:
+        config = {CFG_WELCOME_GROUPS: ["123"]}
         self.assertEqual(
-            pick_welcome(self.welcome, self.on, "123"),
-            DEFAULT_WELCOME_TEXT,
+            pick_welcome(FakeWelcome(), config, "123"), DEFAULT_WELCOME_TEXT
         )
 
-    async def test_on_uses_saved_text(self) -> None:
-        await self.welcome.set_content("123", "请先看群规")
+    def test_on_uses_webui_text(self) -> None:
+        config = {CFG_WELCOME_GROUPS: ["123"], CFG_WELCOME_TEXT: "请先看群规"}
+        self.assertEqual(pick_welcome(FakeWelcome(), config, "123"), "请先看群规")
+
+    def test_group_override_beats_global(self) -> None:
+        config = {CFG_WELCOME_GROUPS: ["123"], CFG_WELCOME_TEXT: "全局句"}
         self.assertEqual(
-            pick_welcome(self.welcome, self.on, "123"),
-            "请先看群规",
+            pick_welcome(FakeWelcome("本群句"), config, "123"), "本群句"
         )
+
+    def test_empty_override_closes_even_if_on(self) -> None:
+        config = {CFG_WELCOME_GROUPS: ["123"], CFG_WELCOME_TEXT: "全局句"}
+        self.assertEqual(pick_welcome(FakeWelcome(""), config, "123"), "")
+
+    def test_too_long_is_clipped(self) -> None:
+        config = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "哈" * (WELCOME_MAX_LEN + 8),
+        }
+        text = pick_welcome(FakeWelcome(), config, "123")
+        self.assertEqual(len(text), WELCOME_MAX_LEN)

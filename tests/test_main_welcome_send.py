@@ -100,10 +100,10 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_INVITE_GROUPS,
     CFG_VERIFY_GROUPS,
     CFG_WELCOME_GROUPS,
+    CFG_WELCOME_TEXT,
     DEFAULT_WELCOME_TEXT,
     VERIFY_JOIN_MUTE_SECONDS,
 )
-
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
 
 
@@ -194,19 +194,22 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         db_path = Path(self._tmp.name) / "rules.db"
         self.plugin = RulesPlugin.__new__(RulesPlugin)
-        self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.invite = InviteStore(db_path)
+        self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.config = {}
+
 
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     async def test_increase_sends_at_and_text(self) -> None:
-        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+        self.plugin.config = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
+        }
 
-        await self.plugin.welcome.set_content("123", "请先看群规")
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
         self.assertTrue(event.stopped)
@@ -270,9 +273,9 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.config = {
             CFG_WELCOME_GROUPS: ["123"],
             CFG_VERIFY_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
         }
 
-        await self.plugin.welcome.set_content("123", "请先看群规")
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
         code = self.plugin.verify.get_code("123", "10001")

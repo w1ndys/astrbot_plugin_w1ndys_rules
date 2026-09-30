@@ -2,6 +2,7 @@
 #
 # 入群通知不常发，不必像关键词那样常驻整表快照；读的时候查库。
 # 写仍加锁，避免两个管理员同时改同一群时互相覆盖写了一半。
+# 没行表示继承全局；空串表示本群关闭，优先于开启名单。
 
 import asyncio
 from pathlib import Path
@@ -17,7 +18,7 @@ CREATE TABLE IF NOT EXISTS welcome_text (
 
 
 class WelcomeStore:
-    """入群欢迎语文案表。没有记录就当还没设置过，读出来是空串。"""
+    """入群欢迎语文案表。没有记录表示继承全局；空串表示本群关闭。"""
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -33,8 +34,8 @@ class WelcomeStore:
         finally:
             conn.close()
 
-    def get_content(self, group_id: str) -> str:
-        """取本群欢迎语。没设过返回空串，默认文案留给业务层。"""
+    def get_content(self, group_id: str) -> str | None:
+        """取本群欢迎语。没行返回 None（继承全局）；空串表示本群关闭。"""
         conn = connect(self.db_path)
         try:
             row = conn.execute(
@@ -43,13 +44,13 @@ class WelcomeStore:
             ).fetchone()
         finally:
             conn.close()
-        # 这群还没写过欢迎语
+        # 这群还没写过独立配置，入群时走全局兜底
         if row is None:
-            return ""
+            return None
         return str(row[0])
 
     async def set_content(self, group_id: str, content: str) -> None:
-        """写入或覆盖本群欢迎语。写完立刻能读到。"""
+        """写入或覆盖本群欢迎语。空串也落库，表示本群关闭。"""
         async with self._lock:
             await asyncio.to_thread(self._set_content_sync, group_id, content)
 

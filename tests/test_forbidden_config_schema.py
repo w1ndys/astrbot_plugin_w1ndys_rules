@@ -37,3 +37,7 @@ class ForbiddenConfigSchemaTest(unittest.TestCase):
             self.assertEqual(schema[key]["default"], [])
             self.assertEqual(schema[key]["items"], {"type": "string"})
 
+        self.assertEqual(schema["welcome_text"]["type"], "text")
+        self.assertEqual(schema["welcome_text"]["default"], "")
+
+

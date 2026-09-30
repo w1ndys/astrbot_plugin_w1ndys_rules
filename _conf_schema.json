@@ -21,10 +21,16 @@
     "description": "开启欢迎语的群",
     "type": "list",
     "default": [],
-    "hint": "入群要发欢迎语的群号，按条添加。空名单则都不发。",
+    "hint": "入群要发欢迎语的群号，按条添加。空名单则都不发。本群独立配置写成空则仍关闭。",
     "items": {
       "type": "string"
     }
+  },
+  "welcome_text": {
+    "description": "入群欢迎语文案（全局默认）",
+    "type": "text",
+    "default": "",
+    "hint": "本群没单独设置时用这一句。留空则发「欢迎入群~」。群主/管理员可在群里用「欢迎语 设置」覆盖；写成空则关闭该群欢迎，优先于开启名单。"
   },
   "verify_groups": {
     "description": "开启入群验证的群",
