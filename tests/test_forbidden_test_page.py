@@ -20,9 +20,8 @@ class ForbiddenTestPageTest(unittest.TestCase):
 
     def test_kinds_are_in_app(self) -> None:
         """三种试跑都要能从页面选到。"""
-        app = (PAGE / "app.js").read_text()
+        app = (PAGE / "forbidden-test-view.js").read_text()
         self.assertIn('value: "text"', app)
         self.assertIn('value: "transcript"', app)
         self.assertIn('value: "qr"', app)
         self.assertIn("qr_found", app)
-

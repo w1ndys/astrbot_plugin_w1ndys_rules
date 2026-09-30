@@ -1,19 +1,14 @@
-// 页面层：非密钥全局配置。React + Ant Design，经 AstrBot Pages 桥调后端。
-// 不用 JSX。飞书 webhook 不展示、不提交。
+// 页面层：四块业务放在同一 iframe 里切 Tab。
+// 点 Tab 只改本页 state，不改宿主 hash。不用 JSX。
 
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  Button,
-  Card,
-  ConfigProvider,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  message,
-  theme,
-} from "antd";
+import { ConfigProvider, Tabs, theme } from "antd";
+import { currentPageId, pageTabItems } from "./nav.js";
+import { SettingsView } from "./settings-view.js";
+import { KeywordsView } from "./keywords-view.js";
+import { ForbiddenTestView } from "./forbidden-test-view.js";
+import { ForbiddenLogsView } from "./forbidden-logs-view.js";
 
 const h = React.createElement;
 
@@ -28,57 +23,21 @@ function readIsDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function groupSelect(name, label) {
-  return h(Form.Item, { name, label }, h(Select, { mode: "tags", tokenSeparators: [",", " "] }));
-}
-
 function App() {
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [active, setActive] = useState(currentPageId());
   const isDark = useMemo(() => readIsDark(), []);
   const algorithm = isDark ? theme.darkAlgorithm : theme.defaultAlgorithm;
-  const bridge = window.AstrBotPluginPage;
 
   useEffect(() => {
     document.body.classList.toggle("is-dark", isDark);
-    let cancelled = false;
-    async function boot() {
-      if (!bridge) {
-        message.error("页面桥接未就绪，请刷新后重试。");
-        return;
-      }
-      await bridge.ready();
-      if (cancelled) {
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await bridge.apiPost("settings/get", {});
-        if (!cancelled) {
-          form.setFieldsValue(data);
-        }
-      } catch (error) {
-        const text = error && error.message ? error.message : String(error);
-        message.error(text);
-      }
-      setLoading(false);
-    }
-    boot();
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge, form, isDark]);
+  }, [isDark]);
 
-  async function save() {
-    const values = await form.validateFields();
-    try {
-      const result = await bridge.apiPost("settings/save", values);
-      message.success(result.message || "已保存");
-    } catch (error) {
-      const text = error && error.message ? error.message : String(error);
-      message.error(text);
-    }
-  }
+  const items = pageTabItems({
+    settings: h(SettingsView),
+    keywords: h(KeywordsView),
+    "forbidden-test": h(ForbiddenTestView),
+    "forbidden-logs": h(ForbiddenLogsView),
+  });
 
   return h(
     ConfigProvider,
@@ -86,32 +45,14 @@ function App() {
     h(
       "main",
       { className: "page" },
-      h(
-        Card,
-        { title: "全局配置", loading },
-        h(
-          "p",
-          { className: "hint" },
-          "手写非密钥字段，保存写回 schema。飞书 webhook 只在 AstrBot 官方插件配置页改。",
-        ),
-        h(
-          Form,
-          { form, layout: "vertical" },
-          groupSelect("keyword_groups", "开启关键词回复的群"),
-          groupSelect("forbidden_groups", "开启违禁词的群"),
-          groupSelect("welcome_groups", "开启欢迎语的群"),
-          groupSelect("verify_groups", "开启入群验证的群"),
-          groupSelect("invite_groups", "开启邀请树的群"),
-          groupSelect("forbidden_block_group_card_groups", "拦截群名片的群"),
-          h(Form.Item, { name: "welcome_text", label: "入群欢迎语文案（全局默认）" }, h(Input.TextArea, { rows: 3 })),
-          h(Form.Item, { name: "forbidden_guideline", label: "违禁长什么样" }, h(Input)),
-          h(Form.Item, { name: "forbidden_samples", label: "违禁样本" }, h(Input.TextArea, { rows: 6 })),
-          h(Form.Item, { name: "forbidden_mute_seconds", label: "禁言秒数" }, h(InputNumber, { min: 0, style: { width: "100%" } })),
-          h(Form.Item, { name: "forbidden_remind_text", label: "提醒文案" }, h(Input)),
-          h(Form.Item, { name: "verify_mute_seconds", label: "入群验证禁言秒数" }, h(InputNumber, { min: 0, style: { width: "100%" } })),
-          h(Button, { type: "primary", onClick: save }, "保存"),
-        ),
-      ),
+      h(Tabs, {
+        type: "card",
+        size: "small",
+        activeKey: active,
+        onChange: setActive,
+        destroyInactiveTabPane: true,
+        items,
+      }),
     ),
   );
 }

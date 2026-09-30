@@ -18,8 +18,8 @@ class ForbiddenLogsPageAssetsTest(unittest.TestCase):
         self.assertIn('"react"', html)
 
     def test_images_shown_as_img_not_text(self) -> None:
-        js = (PAGE / "app.js").read_text()
+        js = (PAGE / "forbidden-logs-view.js").read_text()
         self.assertIn("图片未能保存", js)
-        self.assertIn("h(\"img\"", js)
+        self.assertIn('h("img"', js)
         self.assertNotIn("<pre", js)
         self.assertNotIn("images", js)

@@ -17,5 +17,6 @@ class SettingsPageAssetsTest(unittest.TestCase):
         self.assertIn("antd", html)
 
     def test_no_webhook_field(self) -> None:
-        js = (PAGE / "app.js").read_text()
-        self.assertNotIn("forbidden_feishu_webhook", js)
+        for path in PAGE.glob("*.js"):
+            js = path.read_text()
+            self.assertNotIn("forbidden_feishu_webhook", js, path.name)
