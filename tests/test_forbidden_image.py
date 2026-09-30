@@ -79,10 +79,6 @@ class FakeStore:
         return ["广告"]
 
 
-class FakeActivity:
-    def is_within_window(self, group_id: str, user_id: str) -> bool:
-        return True
-
 
 class FakeProvider:
     def __init__(self, text: str) -> None:
@@ -153,7 +149,6 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             "",
             get_provider,
             decoder=lambda data: True,
-            activity=FakeActivity(),
         )
         self.assertTrue(handled)
         self.assertEqual(provider.calls, 0)
@@ -170,7 +165,6 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             self._provider("是"),
             decoder=lambda data: False,
             transcribe=lambda _event: HIT,
-            activity=FakeActivity(),
         )
         self.assertTrue(handled)
 

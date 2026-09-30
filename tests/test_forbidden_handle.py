@@ -42,15 +42,6 @@ class FakeForbiddenStore:
         return []
 
 
-class FakeActivity:
-    def __init__(self, active: bool = False) -> None:
-        self.active = active
-
-    def is_within_window(self, group_id: str, user_id: str) -> bool:
-        """测试替身：固定返回构造时的活跃状态。"""
-        return self.active
-
-
 class FakeApi:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
@@ -318,27 +309,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         actions = [item[0] for item in event.bot.api.calls]
         self.assertEqual(actions, ["delete_msg", "set_group_ban"])
 
-    async def test_recently_active_skips_without_model(self) -> None:
-        event = FakeEvent(role="member")
-        provider = FakeProvider("是")
-
-        async def get_provider():
-            return provider
-
-        handled, reply = await handle_forbidden_message(
-            ready_config(),
-            FakeForbiddenStore(),
-            event,
-            "123",
-            "这里有广告",
-            get_provider,
-            activity=FakeActivity(True),
-        )
-        self.assertFalse(handled)
-        self.assertEqual(reply, "")
-        self.assertEqual(provider.calls, 0)
-        self.assertEqual(event.bot.api.calls, [])
-
     async def test_never_seen_still_detects(self) -> None:
         event = FakeEvent(role="member")
         handled, reply = await handle_forbidden_message(
@@ -348,7 +318,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
             "123",
             "这里有广告",
             self._provider("是"),
-            activity=FakeActivity(False),
         )
         self.assertTrue(handled)
         self.assertEqual(reply, "请不要发广告。")

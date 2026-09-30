@@ -24,7 +24,6 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 
-from .business.activity import record_speak
 from .business.admin_command import handle_admin_command
 from .business.blacklist_admin import (
     REJECT_MESSAGE as BLACKLIST_REJECT,
@@ -69,7 +68,6 @@ from .business.verify_leave import drop_pending, is_group_decrease
 from .business.verify_remind import send_due_remind
 from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
-from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_log_store import ForbiddenLogStore
 from .data.forbidden_store import ForbiddenStore
@@ -103,7 +101,6 @@ class RulesPlugin(Star):
         self.verify = VerifyStore(db_path)
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
-        self.activity = ActivityStore(db_path)
         self.welcome = WelcomeStore(db_path)
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
@@ -402,7 +399,6 @@ class RulesPlugin(Star):
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)
-            await self._note_speak(group_id, event)
             return
         # 斜杠开头的是别的插件或默认前缀指令，不拿来当关键词或本插件命令
         if text.startswith("/"):
@@ -420,7 +416,6 @@ class RulesPlugin(Star):
                 if reply:
                     yield event.plain_result(reply)
                 _stop_llm(event)
-                await self._note_speak(group_id, event)
                 return
         handled, reply = await handle_forbidden_message(
             self.config,
@@ -429,7 +424,6 @@ class RulesPlugin(Star):
             group_id,
             text,
             self._using_provider,
-            activity=self.activity,
             log_store=self.forbidden_logs,
         )
 
@@ -439,19 +433,17 @@ class RulesPlugin(Star):
             if reply:
                 yield event.plain_result(reply)
             _stop_llm(event)
-            await self._note_speak(group_id, event)
             return
         # 入群验证只认私聊交码，群消息不再当交码
         reply = pick_reply(self.keywords, self.config, group_id, text)
 
-        # 先记下这次发言，再决定要不要回关键词；必须在违禁判断之后，避免第一条就被当成活跃
-        await self._note_speak(group_id, event)
         # 没命中就静默放过，让消息继续走后面的流程
         if not reply:
             return
         yield event.plain_result(reply)
         # 回完拦住后续 LLM，避免模型又接一句
         _stop_llm(event)
+
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def on_private_verify(self, event: AstrMessageEvent):
@@ -468,14 +460,6 @@ class RulesPlugin(Star):
         if reply:
             yield event.plain_result(reply)
         _stop_llm(event)
-
-    async def _note_speak(self, group_id: str, event: AstrMessageEvent) -> None:
-        """把这次有文本的群发言记下来，给 7 天活跃判断用。"""
-        user_id = _sender_id_of(event)
-        # 读不到 QQ 号就不要写空键
-        if not user_id:
-            return
-        await record_speak(self.activity, group_id, user_id)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
