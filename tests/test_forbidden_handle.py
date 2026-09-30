@@ -1,6 +1,7 @@
 # 群消息违禁路径：开关、触发词、是/否、处置。不打真实飞书。
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_action import (
 from astrbot_plugin_w1ndys_rules.business.forbidden_handle import (
     handle_forbidden_message,
 )
+from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_FORBIDDEN_GROUPS,
     DEFAULT_FORBIDDEN_MUTE_SECONDS,
@@ -25,9 +27,9 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_REMIND_TEXT,
     FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_KIND_TRIGGER,
+    FORBIDDEN_REASON_MODEL,
     MAX_FORBIDDEN_MUTE_SECONDS,
 )
-
 
 
 class FakeForbiddenStore:
@@ -352,6 +354,47 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply, "请不要发广告。")
         actions = [item[0] for item in event.bot.api.calls]
         self.assertEqual(actions, ["delete_msg", "set_group_ban"])
+
+    async def test_yes_writes_log(self) -> None:
+        """模型说「是」才落日志，text 用 message_str。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        event = FakeEvent()
+        event.message_str = "这里有广告"
+        handled, _reply = await handle_forbidden_message(
+            ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
+            FakeForbiddenStore(),
+            event,
+            "123",
+            "这里有广告",
+            self._provider("是"),
+            log_store=store,
+        )
+        self.assertTrue(handled)
+        items, total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_MODEL)
+        self.assertEqual(items[0].text, "这里有广告")
+        self.assertEqual(items[0].user_id, "10001")
+
+    async def test_skip_does_not_write_log(self) -> None:
+        """没命中不写日志。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        event = FakeEvent()
+        await handle_forbidden_message(
+            ready_config(),
+            FakeForbiddenStore(),
+            event,
+            "123",
+            "今天天气不错",
+            self._provider("是"),
+            log_store=store,
+        )
+        _items, total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        self.assertEqual(total, 0)
 
     def _provider(self, text: str):
         async def get_provider():

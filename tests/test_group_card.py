@@ -2,6 +2,7 @@
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,12 +15,13 @@ from astrbot_plugin_w1ndys_rules.business.group_card import (
     handle_group_card,
     is_group_card,
 )
+from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
+    FORBIDDEN_REASON_GROUP_CARD,
 )
-
 
 # 结构来自真实群名片 payload，查询串改成占位，避免把签名写进仓库。
 GROUP_CARD = {
@@ -161,3 +163,20 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(reply, "")
         self.assertEqual(event.bot.api.calls, [])
+
+    async def test_hit_writes_log_json(self) -> None:
+        """群名片命中写日志，卡片进 json 列。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        event = FakeEvent([Json(GROUP_CARD)])
+        event.message_str = ""
+        handled, _reply = await handle_group_card(
+            on_config(), event, "123", log_store=store
+        )
+        items, total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        self.assertTrue(handled)
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_GROUP_CARD)
+        self.assertEqual(items[0].text, "")
+        self.assertIn("群名片", items[0].json_text)

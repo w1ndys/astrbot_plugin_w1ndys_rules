@@ -3,7 +3,11 @@
 
 import json
 
-from ..entity.constants import FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS, GROUP_CARD_HIT
+from ..entity.constants import (
+    FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
+    FORBIDDEN_REASON_GROUP_CARD,
+    GROUP_CARD_HIT,
+)
 from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .qq_role import is_qq_group_staff
@@ -14,6 +18,7 @@ async def handle_group_card(
     event: object,
     group_id: str,
     poster=None,
+    log_store=None,
 ) -> tuple[bool, str]:
     """处理一条群名片。handled=True 时入口要停 LLM。
 
@@ -30,7 +35,14 @@ async def handle_group_card(
     if is_qq_group_staff(event):
         return False, ""
     remind = await apply_hit_actions(
-        event, config, group_id, GROUP_CARD_HIT, GROUP_CARD_HIT, poster
+        event,
+        config,
+        group_id,
+        GROUP_CARD_HIT,
+        GROUP_CARD_HIT,
+        poster,
+        log_store,
+        FORBIDDEN_REASON_GROUP_CARD,
     )
     return True, remind
 
@@ -73,10 +85,8 @@ def _looks_like_group_card(card: dict) -> bool:
     # contact 不是对象就不是群名片
     if not isinstance(contact, dict):
         return False
-    # 卡片角标写着群名片
-    if contact.get("tag") == "群名片":
-        return True
-    return False
+    # 卡片角标写着群名片才认
+    return contact.get("tag") == "群名片"
 
 
 def _unwrap_card(data: object) -> dict:

@@ -3,7 +3,7 @@
 # 测试页不走这里。
 
 from ..data.forbidden_store import ForbiddenStore
-from ..entity.constants import CFG_FORBIDDEN_GROUPS
+from ..entity.constants import CFG_FORBIDDEN_GROUPS, FORBIDDEN_REASON_MODEL
 from .activity import is_recently_active
 from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
@@ -20,6 +20,7 @@ async def handle_forbidden_message(
     get_provider,
     poster=None,
     activity=None,
+    log_store=None,
 ) -> tuple[bool, str]:
     """处理一条群消息的违禁判断。handled=True 时入口要停 LLM。
 
@@ -46,7 +47,14 @@ async def handle_forbidden_message(
     if verdict != "yes":
         return False, ""
     remind = await apply_hit_actions(
-        event, config, group_id, plan.trigger, plan.user, poster
+        event,
+        config,
+        group_id,
+        plan.trigger,
+        plan.user,
+        poster,
+        log_store,
+        FORBIDDEN_REASON_MODEL,
     )
     return True, remind
 

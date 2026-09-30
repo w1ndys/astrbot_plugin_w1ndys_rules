@@ -88,6 +88,12 @@ FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
 FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS = "forbidden_block_group_card_groups"
 # 飞书和处置日志里的触发名，不是用户正文，避免把卡片 JSON 里的签名带出去。
 GROUP_CARD_HIT = "群名片"
+# 违禁日志原因码。人话在业务层拼，飞书仍用短通知。
+FORBIDDEN_REASON_MODEL = "model"
+FORBIDDEN_REASON_GROUP_CARD = "group_card"
+FORBIDDEN_REASON_QRCODE = "qrcode"
+# WebUI 日志表默认每页条数。这一刀只给数据层测试用。
+FORBIDDEN_LOG_PAGE_SIZE = 20
 
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6

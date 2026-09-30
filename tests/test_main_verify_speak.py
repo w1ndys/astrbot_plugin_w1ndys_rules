@@ -89,6 +89,7 @@ install_astrbot_stubs()
 
 from astrbot_plugin_w1ndys_rules.business.verify_handle import FAIL_REPLY, PASS_REPLY
 from astrbot_plugin_w1ndys_rules.data.activity_store import ActivityStore
+from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
 from astrbot_plugin_w1ndys_rules.data.forbidden_store import ForbiddenStore
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
@@ -184,6 +185,7 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.keywords = KeywordStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.forbidden = ForbiddenStore(db_path)
+        self.plugin.forbidden_logs = ForbiddenLogStore(db_path)
         self.plugin.activity = ActivityStore(db_path)
         self.plugin.welcome = WelcomeStore(db_path)
 

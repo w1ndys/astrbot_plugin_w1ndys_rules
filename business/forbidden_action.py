@@ -13,6 +13,7 @@ from ..entity.constants import (
     MAX_FORBIDDEN_MUTE_SECONDS,
 )
 from .forbidden_judge import config_text
+from .forbidden_log import save_hit_log, take_payload
 
 
 def mute_seconds(config: object) -> int:
@@ -199,9 +200,15 @@ async def apply_hit_actions(
     trigger: str,
     text: str,
     poster=None,
+    log_store=None,
+    reason_code: str = "",
 ) -> str:
-    """命中后：撤回、禁言、飞书。返回群提醒文案，空串表示不在群里提醒。"""
+    """命中后：先采原文，再撤回、禁言、飞书、写日志。返回群提醒文案。"""
+    payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
     await mute_member(event, group_id, mute_seconds(config))
     await notify_feishu(config, group_id, trigger, text, event, poster)
+    await save_hit_log(
+        log_store, group_id, sender_id_of(event), reason_code, trigger, payload
+    )
     return remind_text(config)

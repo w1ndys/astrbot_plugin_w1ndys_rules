@@ -68,6 +68,7 @@ from .business.verify_unmute import is_admin_unmute
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.activity_store import ActivityStore
 from .data.blacklist_store import BlacklistStore
+from .data.forbidden_log_store import ForbiddenLogStore
 from .data.forbidden_store import ForbiddenStore
 from .data.invite_store import InviteStore
 from .data.keyword_store import KeywordStore
@@ -95,6 +96,7 @@ class RulesPlugin(Star):
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
         self.forbidden = ForbiddenStore(db_path)
+        self.forbidden_logs = ForbiddenLogStore(db_path)
         self.verify = VerifyStore(db_path)
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
@@ -294,7 +296,9 @@ class RulesPlugin(Star):
         if not group_id:
             return
         text = event.message_str or ""
-        handled, reply = await handle_group_card(self.config, event, group_id)
+        handled, reply = await handle_group_card(
+            self.config, event, group_id, log_store=self.forbidden_logs
+        )
         # 当前群在 WebUI 名单里时，群名片直接违规，没有正文也要拦
         if handled:
             # 提醒留空就只处置，不在群里再说话
@@ -332,6 +336,7 @@ class RulesPlugin(Star):
             text,
             self._using_provider,
             activity=self.activity,
+            log_store=self.forbidden_logs,
         )
 
         # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里。
