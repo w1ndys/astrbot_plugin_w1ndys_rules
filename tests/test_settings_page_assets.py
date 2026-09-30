@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "pages" / "settings"
+PAGE = ROOT / "pages" / "console"
 
 
 class SettingsPageAssetsTest(unittest.TestCase):
@@ -14,7 +14,6 @@ class SettingsPageAssetsTest(unittest.TestCase):
         html = (PAGE / "index.html").read_text()
         self.assertIn('type="module" src="./app.js"', html)
         self.assertNotIn('<script src="./app.js">', html)
-        self.assertIn("antd", html)
 
     def test_no_webhook_field(self) -> None:
         for path in PAGE.glob("*.js"):

@@ -1,7 +1,7 @@
 // 页面层：非密钥全局配置面板。飞书 webhook 不展示、不提交。
 
-import React, { useEffect, useState } from "react";
-import { Button, Card, Form, Input, InputNumber, Select, message } from "antd";
+import React, { useEffect, useState } from "./vendor/react.js";
+import { Button, Card, Form, Input, InputNumber, Select, message } from "./vendor/antd.js";
 
 const h = React.createElement;
 

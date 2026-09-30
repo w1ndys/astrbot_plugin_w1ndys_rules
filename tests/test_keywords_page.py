@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "pages" / "keywords"
+PAGE = ROOT / "pages" / "console"
 
 
 class KeywordPageAssetsTest(unittest.TestCase):
@@ -15,5 +15,3 @@ class KeywordPageAssetsTest(unittest.TestCase):
         html = (PAGE / "index.html").read_text()
         self.assertIn('type="module" src="./app.js"', html)
         self.assertNotIn('<script src="./app.js">', html)
-        self.assertIn("antd", html)
-        self.assertIn('"react"', html)

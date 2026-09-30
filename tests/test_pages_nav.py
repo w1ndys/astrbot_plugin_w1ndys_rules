@@ -1,11 +1,10 @@
-# 页面层：Pages 顶栏和 antd CDN 约定。
+# 页面层：Pages 顶栏和本地 vendor 约定。
 
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGES = ROOT / "pages"
-FOLDERS = ("settings", "keywords", "forbidden-test", "forbidden-logs")
+PAGE = ROOT / "pages" / "console"
 SHARED = (
     "nav.js",
     "app.js",
@@ -14,27 +13,37 @@ SHARED = (
     "forbidden-test-view.js",
     "forbidden-logs-view.js",
 )
+VENDOR = ("react.js", "react-dom.js", "client.js", "antd.js")
 
 
 class PagesNavTest(unittest.TestCase):
-    def test_html_uses_antd_bundle(self) -> None:
-        """不带 bundle 时图标会向站点根路径要 colors.blue，页面空白。"""
-        for folder in FOLDERS:
-            html = (PAGES / folder / "index.html").read_text()
-            self.assertIn("antd@5.24.0?bundle&external=react,react-dom", html)
+    def test_html_uses_local_vendor(self) -> None:
+        """依赖放本页 vendor，不走 esm.sh。"""
+        html = (PAGE / "index.html").read_text()
+        self.assertNotIn("esm.sh", html)
+        self.assertNotIn("importmap", html)
+        app = (PAGE / "app.js").read_text()
+        self.assertIn("./vendor/antd.js", app)
+        self.assertIn("./vendor/react.js", app)
+        for name in VENDOR:
+            self.assertTrue((PAGE / "vendor" / name).is_file(), name)
 
-    def test_apps_mount_inpage_tabs(self) -> None:
-        """四页都要能点 Tab 换面板。脚本只能引用本页目录。不改宿主 hash。"""
-        for folder in FOLDERS:
-            nav = (PAGES / folder / "nav.js").read_text()
-            self.assertNotIn("window.top", nav)
-            self.assertNotIn("#/plugin-page/", nav)
-            self.assertIn("pageTabItems", nav)
-            app = (PAGES / folder / "app.js").read_text()
-            self.assertIn("pageTabItems", app)
-            self.assertIn('type: "card"', app)
-            self.assertIn("onChange: setActive", app)
-            self.assertIn("./nav.js", app)
-            self.assertNotIn("../nav.js", app)
-            for name in SHARED:
-                self.assertTrue((PAGES / folder / name).is_file(), name)
+    def test_single_console_route(self) -> None:
+        """宿主只扫 pages/<页名>/index.html。现在只要 console。"""
+        names = sorted(p.name for p in (ROOT / "pages").iterdir() if p.is_dir())
+        self.assertEqual(names, ["console"])
+
+    def test_app_mounts_inpage_tabs(self) -> None:
+        """点 Tab 换面板，不改宿主 hash。脚本只能引用本页目录。"""
+        nav = (PAGE / "nav.js").read_text()
+        self.assertNotIn("window.top", nav)
+        self.assertNotIn("#/plugin-page/", nav)
+        self.assertIn("pageTabItems", nav)
+        app = (PAGE / "app.js").read_text()
+        self.assertIn("pageTabItems", app)
+        self.assertIn('type: "card"', app)
+        self.assertIn("onChange: setActive", app)
+        self.assertIn("./nav.js", app)
+        self.assertNotIn("../nav.js", app)
+        for name in SHARED:
+            self.assertTrue((PAGE / name).is_file(), name)

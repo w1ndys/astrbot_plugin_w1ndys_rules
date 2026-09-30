@@ -1,7 +1,7 @@
 // 页面层：关键词表。一张表管全部群。
 
-import React, { useCallback, useEffect, useState } from "react";
-import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
+import React, { useCallback, useEffect, useState } from "./vendor/react.js";
+import { Button, Card, Input, Pagination, Space, Table, message } from "./vendor/antd.js";
 
 const h = React.createElement;
 

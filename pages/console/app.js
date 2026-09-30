@@ -1,9 +1,9 @@
 // 页面层：四块业务放在同一 iframe 里切 Tab。
 // 点 Tab 只改本页 state，不改宿主 hash。不用 JSX。
 
-import React, { useEffect, useMemo, useState } from "react";
-import { createRoot } from "react-dom/client";
-import { ConfigProvider, Tabs, theme } from "antd";
+import React, { useEffect, useMemo, useState } from "./vendor/react.js";
+import { createRoot } from "./vendor/client.js";
+import { ConfigProvider, Tabs, theme } from "./vendor/antd.js";
 import { currentPageId, pageTabItems } from "./nav.js";
 import { SettingsView } from "./settings-view.js";
 import { KeywordsView } from "./keywords-view.js";

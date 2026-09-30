@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "pages" / "forbidden-test"
+PAGE = ROOT / "pages" / "console"
 
 
 class ForbiddenTestPageTest(unittest.TestCase):
@@ -15,8 +15,6 @@ class ForbiddenTestPageTest(unittest.TestCase):
         html = (PAGE / "index.html").read_text()
         self.assertIn('type="module" src="./app.js"', html)
         self.assertNotIn('<script src="./app.js">', html)
-        self.assertIn("antd", html)
-        self.assertIn('"react"', html)
 
     def test_kinds_are_in_app(self) -> None:
         """三种试跑都要能从页面选到。"""

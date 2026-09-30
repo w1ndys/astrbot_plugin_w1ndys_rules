@@ -1,7 +1,7 @@
 // 页面层：违禁日志只读表。列表不展示原文。详情用 img 看图。
 
-import React, { useCallback, useEffect, useState } from "react";
-import { Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography, message } from "antd";
+import React, { useCallback, useEffect, useState } from "./vendor/react.js";
+import { Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography, message } from "./vendor/antd.js";
 
 const h = React.createElement;
 

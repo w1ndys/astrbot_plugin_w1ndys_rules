@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "pages" / "forbidden-logs"
+PAGE = ROOT / "pages" / "console"
 
 
 class ForbiddenLogsPageAssetsTest(unittest.TestCase):
@@ -14,8 +14,6 @@ class ForbiddenLogsPageAssetsTest(unittest.TestCase):
         html = (PAGE / "index.html").read_text()
         self.assertIn('type="module" src="./app.js"', html)
         self.assertNotIn('<script src="./app.js">', html)
-        self.assertIn("antd", html)
-        self.assertIn('"react"', html)
 
     def test_images_shown_as_img_not_text(self) -> None:
         js = (PAGE / "forbidden-logs-view.js").read_text()

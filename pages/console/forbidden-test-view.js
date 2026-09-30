@@ -1,7 +1,7 @@
 // 页面层：违禁词测试面板。不会撤回、禁言或发飞书。
 
-import React, { useEffect, useState } from "react";
-import { Alert, Button, Card, Input, Select, Space } from "antd";
+import React, { useEffect, useState } from "./vendor/react.js";
+import { Alert, Button, Card, Input, Select, Space } from "./vendor/antd.js";
 
 const h = React.createElement;
 
