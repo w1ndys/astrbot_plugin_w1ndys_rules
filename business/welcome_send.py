@@ -1,8 +1,8 @@
 # 业务层：群成员增加时要不要发欢迎语、发哪句。不碰 AstrBot 发送。
 
-from .._shared.group_switch_store import GroupSwitchStore
 from ..data.welcome_store import WelcomeStore
-from ..entity.constants import DEFAULT_WELCOME_TEXT, FEATURE_WELCOME
+from ..entity.constants import CFG_WELCOME_GROUPS, DEFAULT_WELCOME_TEXT
+from .feature_enable import feature_on
 
 
 def is_group_increase(event: object) -> bool:
@@ -19,12 +19,10 @@ def is_group_increase(event: object) -> bool:
     return notice == "group_increase"
 
 
-def pick_welcome(
-    welcome: WelcomeStore, switches: GroupSwitchStore, group_id: str
-) -> str:
-    """开关关闭返回空串，不发。没设文案用默认句。"""
-    # 默认关，没开过的群保持安静
-    if not switches.is_on(group_id, FEATURE_WELCOME):
+def pick_welcome(welcome: WelcomeStore, config: object, group_id: str) -> str:
+    """名单外返回空串，不发。没设文案用默认句。"""
+    # 空名单即关，没写过的群保持安静
+    if not feature_on(config, CFG_WELCOME_GROUPS, group_id):
         return ""
     content = welcome.get_content(group_id)
     # 管理员只开了开关、还没写文案

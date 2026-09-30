@@ -1,4 +1,4 @@
-# 入群欢迎：开关关闭不发；没设文案用默认句。
+# 入群欢迎：名单外不发；没设文案用默认句。
 
 import sys
 import tempfile
@@ -11,15 +11,14 @@ PARENT = str(ROOT.parent)
 if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.business.welcome_send import (
     is_group_increase,
     pick_welcome,
 )
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
+    CFG_WELCOME_GROUPS,
     DEFAULT_WELCOME_TEXT,
-    FEATURE_WELCOME,
 )
 
 
@@ -42,7 +41,7 @@ class WelcomeSendTest(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         db_path = Path(self._tmp.name) / "rules.db"
         self.welcome = WelcomeStore(db_path)
-        self.switches = GroupSwitchStore(db_path)
+        self.on = {CFG_WELCOME_GROUPS: ["123"]}
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -58,19 +57,17 @@ class WelcomeSendTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_off_sends_nothing(self) -> None:
         await self.welcome.set_content("123", "欢迎入群~")
-        self.assertEqual(pick_welcome(self.welcome, self.switches, "123"), "")
+        self.assertEqual(pick_welcome(self.welcome, {}, "123"), "")
 
     async def test_on_without_text_uses_default(self) -> None:
-        await self.switches.set_on("123", FEATURE_WELCOME, True)
         self.assertEqual(
-            pick_welcome(self.welcome, self.switches, "123"),
+            pick_welcome(self.welcome, self.on, "123"),
             DEFAULT_WELCOME_TEXT,
         )
 
     async def test_on_uses_saved_text(self) -> None:
-        await self.switches.set_on("123", FEATURE_WELCOME, True)
         await self.welcome.set_content("123", "请先看群规")
         self.assertEqual(
-            pick_welcome(self.welcome, self.switches, "123"),
+            pick_welcome(self.welcome, self.on, "123"),
             "请先看群规",
         )

@@ -4,6 +4,7 @@
 import json
 
 from ..entity.constants import FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS, GROUP_CARD_HIT
+from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .qq_role import is_qq_group_staff
 
@@ -19,8 +20,9 @@ async def handle_group_card(
     当前群不在名单里、不是群名片、群主或管理员，都不处置。
     """
     # 这个群没写进 WebUI 名单，后面的命令和违禁词继续
-    if not _group_listed(config, group_id):
+    if not feature_on(config, FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS, group_id):
         return False, ""
+
     # 不是群名片就不要拦
     if not is_group_card(event):
         return False, ""
@@ -49,50 +51,6 @@ def is_group_card(event: object) -> bool:
             return True
     return False
 
-
-def _group_listed(config: object, group_id: str) -> bool:
-    """当前群号是否写在 WebUI 名单里。没写就不拦。"""
-    # 没有群号对不上名单
-    if not group_id:
-        return False
-    for item in _config_group_ids(config):
-        # 名单里这一项就是本群
-        if item == group_id:
-            return True
-    return False
-
-
-def _config_group_ids(config: object) -> list:
-    """从 WebUI 取出要拦截群名片的群号。只认按条添加的列表。"""
-    value = _config_raw(config, FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS)
-    # 不是数组就当没配，旧文本框不再拆
-    if not isinstance(value, list):
-        return []
-    return _clean_group_ids(value)
-
-
-def _config_raw(config: object, key: str):
-    """从插件配置取出原值。没有配置返回 None。"""
-    # 没挂上 WebUI 配置就当全空
-    if config is None:
-        return None
-    getter = getattr(config, "get", None)
-    # 配置对象不像字典也当没有
-    if not callable(getter):
-        return None
-    return getter(key)
-
-
-def _clean_group_ids(items: list) -> list:
-    """去掉空项和首尾空白，得到可比较的群号。"""
-    result = []
-    for item in items:
-        text = str(item).strip()
-        # 空项忽略
-        if not text:
-            continue
-        result.append(text)
-    return result
 
 
 def _looks_like_group_card(card: dict) -> bool:

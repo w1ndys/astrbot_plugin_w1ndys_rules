@@ -25,3 +25,15 @@ class ForbiddenConfigSchemaTest(unittest.TestCase):
         self.assertEqual(
             schema["forbidden_block_group_card_groups"]["items"], {"type": "string"}
         )
+        for key in (
+            "keyword_groups",
+            "forbidden_groups",
+            "welcome_groups",
+            "verify_groups",
+            "invite_groups",
+        ):
+            # 功能开关全部是群号名单，空名单即关
+            self.assertEqual(schema[key]["type"], "list")
+            self.assertEqual(schema[key]["default"], [])
+            self.assertEqual(schema[key]["items"], {"type": "string"})
+

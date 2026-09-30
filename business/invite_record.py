@@ -1,26 +1,26 @@
 # 业务层：群成员增加时，把这条邀请边写进库。
 #
-# 每群一个开关，默认关；开关关着不记，避免刚装插件就开始攒数据。
+# 每群一份 WebUI 名单，空名单即关，避免刚装插件就开始攒数据。
 # approve（进群申请被管理员同意）拿不到真实邀请人，按用户决定记成审批管理员，
 # 也就是 operator_id。拿不到 operator_id 或自己邀请自己时不记，宁可不写也不造假边。
-# 不判断开关以外的事，不发消息，不碰 AstrBot。
+# 不判断名单以外的事，不发消息，不碰 AstrBot。
 
-from .._shared.group_switch_store import GroupSwitchStore
 from ..data.invite_store import InviteStore
-from ..entity.constants import FEATURE_INVITE
+from ..entity.constants import CFG_INVITE_GROUPS
+from .feature_enable import feature_on
 
 
 async def record_join(
     store: InviteStore,
-    switches: GroupSwitchStore,
+    config: object,
     event: object,
     group_id: str,
     user_id: str,
     self_id: str = "",
 ) -> bool:
     """入群通知落一条邀请边。写了返回 True，没写返回 False。"""
-    # 默认关，没开过的群不记
-    if not switches.is_on(group_id, FEATURE_INVITE):
+    # 空名单即关，没写过的群不记
+    if not feature_on(config, CFG_INVITE_GROUPS, group_id):
         return False
     # 没有 QQ 号对不上人，不记
     if not user_id:

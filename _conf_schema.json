@@ -1,4 +1,49 @@
 {
+  "keyword_groups": {
+    "description": "开启关键词回复的群",
+    "type": "list",
+    "default": [],
+    "hint": "要开启关键词回复的群号，按条添加。空名单则都不开。",
+    "items": {
+      "type": "string"
+    }
+  },
+  "forbidden_groups": {
+    "description": "开启违禁词的群",
+    "type": "list",
+    "default": [],
+    "hint": "要开启违禁词审核的群号，按条添加。空名单则都不开。群主和管理员不拦。",
+    "items": {
+      "type": "string"
+    }
+  },
+  "welcome_groups": {
+    "description": "开启欢迎语的群",
+    "type": "list",
+    "default": [],
+    "hint": "入群要发欢迎语的群号，按条添加。空名单则都不发。",
+    "items": {
+      "type": "string"
+    }
+  },
+  "verify_groups": {
+    "description": "开启入群验证的群",
+    "type": "list",
+    "default": [],
+    "hint": "入群要做人机验证的群号，按条添加。空名单则都不验证。",
+    "items": {
+      "type": "string"
+    }
+  },
+  "invite_groups": {
+    "description": "开启邀请树的群",
+    "type": "list",
+    "default": [],
+    "hint": "入群要记邀请关系的群号，按条添加。空名单则都不记。",
+    "items": {
+      "type": "string"
+    }
+  },
   "forbidden_guideline": {
     "description": "违禁长什么样",
     "type": "string",

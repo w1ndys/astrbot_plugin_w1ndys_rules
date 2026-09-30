@@ -17,8 +17,8 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_handle import (
     handle_forbidden_message,
 )
 from astrbot_plugin_w1ndys_rules.entity.constants import (
+    CFG_FORBIDDEN_GROUPS,
     DEFAULT_FORBIDDEN_MUTE_SECONDS,
-    FEATURE_FORBIDDEN,
     FORBIDDEN_CFG_FEISHU_WEBHOOK,
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
@@ -29,6 +29,7 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
 )
 
 
+
 class FakeForbiddenStore:
     """给正式群消息路径提供全局触发词。"""
 
@@ -37,17 +38,6 @@ class FakeForbiddenStore:
         if kind == FORBIDDEN_KIND_TRIGGER:
             return ["广告"]
         return []
-
-
-class FakeSwitches:
-    def __init__(self, on: bool = True) -> None:
-        self.on = on
-
-    def is_on(self, group_id: str, feature: str) -> bool:
-        # 测的是违禁词开关，别的功能键当关
-        if feature != FEATURE_FORBIDDEN:
-            return False
-        return self.on
 
 
 class FakeActivity:
@@ -118,9 +108,11 @@ def ready_config(**extra) -> dict:
         FORBIDDEN_CFG_MUTE_SECONDS: 60,
         FORBIDDEN_CFG_REMIND_TEXT: "请不要发广告。",
         FORBIDDEN_CFG_FEISHU_WEBHOOK: "https://example.com/hook",
+        CFG_FORBIDDEN_GROUPS: ["123"],
     }
     data.update(extra)
     return data
+
 
 
 class MuteSecondsTest(unittest.TestCase):
@@ -148,14 +140,14 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
     async def test_switch_off_skips(self) -> None:
         event = FakeEvent()
         handled, reply = await handle_forbidden_message(
-            ready_config(),
+            ready_config(**{CFG_FORBIDDEN_GROUPS: []}),
             FakeForbiddenStore(),
-            FakeSwitches(False),
             event,
             "123",
             "这里有广告",
             self._provider("是"),
         )
+
         self.assertFalse(handled)
         self.assertEqual(reply, "")
         self.assertEqual(event.bot.api.calls, [])
@@ -165,7 +157,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, _reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "今天天气不错",
@@ -179,7 +170,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, _reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -193,7 +183,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, _reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -212,7 +201,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -247,7 +235,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
                 }
             ),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -265,7 +252,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, _reply = await handle_forbidden_message(
             ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -285,7 +271,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -306,7 +291,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -322,7 +306,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -343,7 +326,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",
@@ -360,7 +342,6 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         handled, reply = await handle_forbidden_message(
             ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
             FakeForbiddenStore(),
-            FakeSwitches(True),
             event,
             "123",
             "这里有广告",

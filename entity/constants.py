@@ -1,15 +1,15 @@
 # 实体层：rules 包用到的固定值。不依赖 AstrBot，也不访问数据库。
 
 # rules 包里的功能共用一个 SQLite 文件，各自用一张表。
-# 群开关、关键词都放在这个库里，方便一起备份。
+# 关键词、触发词、验证 pending 等业务行放这个库；功能开没开改走 WebUI 群号名单。
 DB_FILE_NAME = "rules.db"
 
-# 包内功能键。群开关按「群号 + 功能键」记录，以后加功能时在这里追加。
-FEATURE_KEYWORD = "keyword"
-FEATURE_FORBIDDEN = "forbidden"
-FEATURE_WELCOME = "welcome"
-FEATURE_VERIFY = "verify"
-FEATURE_INVITE = "invite"
+# WebUI：每个功能一份开启群号名单。空名单即关，不兼容旧的 SQLite 开关表。
+CFG_KEYWORD_GROUPS = "keyword_groups"
+CFG_FORBIDDEN_GROUPS = "forbidden_groups"
+CFG_WELCOME_GROUPS = "welcome_groups"
+CFG_VERIFY_GROUPS = "verify_groups"
+CFG_INVITE_GROUPS = "invite_groups"
 
 # 旧黑名单用这个 group_id 表示全局名单，群名单用真实群号。
 BLACKLIST_GLOBAL_SCOPE = "global"
@@ -37,21 +37,11 @@ KEYWORD_BATCH_DETAIL_LIMIT = 10
 DEFAULT_WAKE_PREFIX = "/"
 
 # 群里直接发的管理命令。不走 AstrBot 指令过滤器，所以不需要唤醒前缀。
-# 开、关必须整条消息完全相等，避免把后面的闲聊当命令。
-CMD_KEYWORD_ON = "关键词 开"
-CMD_KEYWORD_OFF = "关键词 关"
+# 功能开/关已迁到 WebUI 群号名单，群里不再认「开」「关」。
 CMD_KEYWORD_BATCH = "关键词 批量"
-CMD_FORBIDDEN_ON = "违禁词 开"
-CMD_FORBIDDEN_OFF = "违禁词 关"
-CMD_WELCOME_ON = "欢迎语 开"
-CMD_WELCOME_OFF = "欢迎语 关"
 CMD_WELCOME_SET = "欢迎语 设置"
-# 整句相等才查当前文案，避免把「欢迎语 开」当成查询
+# 整句相等才查当前文案，避免把「欢迎语 设置」当成查询
 CMD_WELCOME_SHOW = "欢迎语"
-CMD_VERIFY_ON = "入群验证 开"
-CMD_VERIFY_OFF = "入群验证 关"
-CMD_INVITE_ON = "邀请树 开"
-CMD_INVITE_OFF = "邀请树 关"
 
 # 上线链最多往上追几层。出现环或超过就截断，避免死循环。
 INVITE_UPLINE_LIMIT = 20

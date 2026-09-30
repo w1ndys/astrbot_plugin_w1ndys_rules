@@ -1,11 +1,11 @@
 # 业务层：群消息要不要走违禁判断、命中后怎么处置。
-# 只有群开关打开、不是群管、不是近 7 天活跃、命中触发词、模型整句回答「是」才处置。
+# 只有 WebUI 名单里的群、不是群管、不是近 7 天活跃、命中触发词、模型整句回答「是」才处置。
 # 测试页不走这里。
 
-from .._shared.group_switch_store import GroupSwitchStore
 from ..data.forbidden_store import ForbiddenStore
-from ..entity.constants import FEATURE_FORBIDDEN
+from ..entity.constants import CFG_FORBIDDEN_GROUPS
 from .activity import is_recently_active
+from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .forbidden_judge import complete_yes_no, plan_forbidden_test
 from .qq_role import is_qq_group_staff
@@ -14,7 +14,6 @@ from .qq_role import is_qq_group_staff
 async def handle_forbidden_message(
     config: object,
     store: ForbiddenStore,
-    switches: GroupSwitchStore,
     event: object,
     group_id: str,
     text: str,
@@ -26,8 +25,8 @@ async def handle_forbidden_message(
 
     返回 (是否已处置, 群提醒文案)。没打开、群管、活跃、没命中、模型说否或失败，都不处置。
     """
-    # 本群没开违禁词，后面的关键词回复还要继续
-    if not switches.is_on(group_id, FEATURE_FORBIDDEN):
+    # 本群没写进 WebUI 违禁名单，后面的关键词回复还要继续
+    if not feature_on(config, CFG_FORBIDDEN_GROUPS, group_id):
         return False, ""
     # QQ 群主或管理员默认安全，不送模型也不处置
     if is_qq_group_staff(event):

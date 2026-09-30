@@ -1,4 +1,4 @@
-# 入群验证文案：关着不建码；开了写入 pending；机器人和空 QQ 跳过。提示要求私聊交码。
+# 入群验证文案：名单外不建码；名单内写入 pending；机器人和空 QQ 跳过。提示要求私聊交码。
 
 import sys
 import tempfile
@@ -11,7 +11,6 @@ PARENT = str(ROOT.parent)
 if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.business.verify_join import (
     hint_text,
     new_code,
@@ -19,7 +18,7 @@ from astrbot_plugin_w1ndys_rules.business.verify_join import (
 )
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
-    FEATURE_VERIFY,
+    CFG_VERIFY_GROUPS,
     VERIFY_CODE_LEN,
 )
 
@@ -29,7 +28,7 @@ class VerifyJoinTest(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         db_path = Path(self._tmp.name) / "rules.db"
         self.store = VerifyStore(db_path)
-        self.switches = GroupSwitchStore(db_path)
+        self.on = {CFG_VERIFY_GROUPS: ["123"]}
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -47,36 +46,32 @@ class VerifyJoinTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("私聊", text)
 
     async def test_off_does_not_register(self) -> None:
-        text = await start_pending(self.store, self.switches, "123", "10001")
+        text = await start_pending(self.store, {}, "123", "10001")
         self.assertEqual(text, "")
         self.assertEqual(self.store.get_code("123", "10001"), "")
 
     async def test_on_registers_and_hint_has_code(self) -> None:
-        await self.switches.set_on("123", FEATURE_VERIFY, True)
-        text = await start_pending(self.store, self.switches, "123", "10001")
+        text = await start_pending(self.store, self.on, "123", "10001")
         code = self.store.get_code("123", "10001")
         self.assertEqual(len(code), VERIFY_CODE_LEN)
         self.assertIn(code, text)
         self.assertEqual(text, hint_text(code))
 
     async def test_bot_self_is_skipped(self) -> None:
-        await self.switches.set_on("123", FEATURE_VERIFY, True)
         text = await start_pending(
-            self.store, self.switches, "123", "999", self_id="999"
+            self.store, self.on, "123", "999", self_id="999"
         )
         self.assertEqual(text, "")
         self.assertEqual(self.store.get_code("123", "999"), "")
 
     async def test_empty_user_is_skipped(self) -> None:
-        await self.switches.set_on("123", FEATURE_VERIFY, True)
-        text = await start_pending(self.store, self.switches, "123", "")
+        text = await start_pending(self.store, self.on, "123", "")
         self.assertEqual(text, "")
 
     async def test_rejoin_overwrites(self) -> None:
-        await self.switches.set_on("123", FEATURE_VERIFY, True)
-        await start_pending(self.store, self.switches, "123", "10001")
+        await start_pending(self.store, self.on, "123", "10001")
         first = self.store.get_code("123", "10001")
-        await start_pending(self.store, self.switches, "123", "10001")
+        await start_pending(self.store, self.on, "123", "10001")
         second = self.store.get_code("123", "10001")
         self.assertTrue(second)
         self.assertEqual(len(second), VERIFY_CODE_LEN)

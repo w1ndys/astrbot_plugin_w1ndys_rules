@@ -1,37 +1,20 @@
 # 业务层：群里直接发的管理命令，不走 AstrBot 指令过滤器，所以不需要唤醒前缀。
 #
-# 开、关、批量、欢迎语设/查是代码路径，和群员命中关键词一类。管理员自然语言
+# 批量、欢迎语设/查是代码路径，和群员命中关键词一类。管理员自然语言
 # 增删改查仍要唤醒，那是进 Agent 的门，不在这里处理。
+# 功能开/关已迁到 WebUI 群号名单，这里不再认「开」「关」。
 #
 # 群员误发要静默：这条路径会看到所有群消息，回「只有管理员」会刷屏。
 
-from .._shared.group_switch_store import GroupSwitchStore
 from ..data.keyword_store import KeywordStore
 from ..data.welcome_store import WelcomeStore
 from ..entity.constants import (
-    CMD_FORBIDDEN_OFF,
-    CMD_FORBIDDEN_ON,
-    CMD_INVITE_OFF,
-    CMD_INVITE_ON,
     CMD_KEYWORD_BATCH,
-    CMD_KEYWORD_OFF,
-    CMD_KEYWORD_ON,
-    CMD_VERIFY_OFF,
-    CMD_VERIFY_ON,
-    CMD_WELCOME_OFF,
-    CMD_WELCOME_ON,
     CMD_WELCOME_SET,
     CMD_WELCOME_SHOW,
 )
 from .auth import is_admin
 from .keyword_batch import import_rules
-from .switch_command import (
-    run_forbidden_switch,
-    run_invite_switch,
-    run_keyword_switch,
-    run_verify_switch,
-    run_welcome_switch,
-)
 from .welcome_admin import set_welcome, show_welcome
 
 
@@ -48,37 +31,14 @@ def _has_command_header(first: str, cmd: str) -> bool:
 
 
 def parse_admin_command(text: str) -> str:
-    """看是开、关、批量还是欢迎语。返回动作名；不是命令返回空串。"""
+    """看是批量还是欢迎语。返回动作名；不是命令返回空串。"""
     payload = text.replace("\ufeff", "").strip()
     # 空消息不是命令
     if not payload:
         return ""
-    # 开、关、查询必须整条相等，后面再跟字就不认
-    if payload == CMD_KEYWORD_ON:
-        return "keyword_on"
-    if payload == CMD_KEYWORD_OFF:
-        return "keyword_off"
-    if payload == CMD_FORBIDDEN_ON:
-        return "forbidden_on"
-    if payload == CMD_FORBIDDEN_OFF:
-        return "forbidden_off"
-    if payload == CMD_WELCOME_ON:
-        return "welcome_on"
-    if payload == CMD_WELCOME_OFF:
-        return "welcome_off"
+    # 查询必须整条相等，后面再跟字就不认
     if payload == CMD_WELCOME_SHOW:
         return "welcome_show"
-    # 入群验证开、关也必须整条相等
-    if payload == CMD_VERIFY_ON:
-        return "verify_on"
-    # 关掉必须整句相等，避免把后面闲聊当命令
-    if payload == CMD_VERIFY_OFF:
-        return "verify_off"
-    # 邀请树开、关也必须整条相等
-    if payload == CMD_INVITE_ON:
-        return "invite_on"
-    if payload == CMD_INVITE_OFF:
-        return "invite_off"
     first = payload.splitlines()[0].strip()
     # 「关键词 批量」后面才是要导入的行
     if _has_command_header(first, CMD_KEYWORD_BATCH):
@@ -92,13 +52,12 @@ def parse_admin_command(text: str) -> str:
 async def handle_admin_command(
     context: object,
     keywords: KeywordStore,
-    switches: GroupSwitchStore,
     welcome: WelcomeStore,
     event: object,
     group_id: str,
     text: str,
 ) -> tuple[bool, str]:
-    """处理开、关、批量、欢迎语设/查。handled=True 时入口必须停 LLM。"""
+    """处理批量、欢迎语设/查。handled=True 时入口必须停 LLM。"""
     action = parse_admin_command(text)
     # 不是管理命令，交给后面的关键词匹配
     if not action:
@@ -107,7 +66,7 @@ async def handle_admin_command(
     if not is_admin(event):
         return True, ""
     return True, await _run_admin_action(
-        action, context, keywords, switches, welcome, event, group_id, text
+        action, context, keywords, welcome, event, group_id, text
     )
 
 
@@ -115,43 +74,12 @@ async def _run_admin_action(
     action: str,
     context: object,
     keywords: KeywordStore,
-    switches: GroupSwitchStore,
     welcome: WelcomeStore,
     event: object,
     group_id: str,
     text: str,
 ) -> str:
     """管理员已经确认后，按动作执行并返回群里要发的文案。"""
-    # 打开本群关键词回复
-    if action == "keyword_on":
-        return await run_keyword_switch(switches, event, group_id, True)
-    # 关闭本群关键词回复
-    if action == "keyword_off":
-        return await run_keyword_switch(switches, event, group_id, False)
-    # 打开本群违禁词
-    if action == "forbidden_on":
-        return await run_forbidden_switch(switches, event, group_id, True)
-    # 关闭本群违禁词
-    if action == "forbidden_off":
-        return await run_forbidden_switch(switches, event, group_id, False)
-    # 打开本群欢迎语开关，入群发送下一刀再接
-    if action == "welcome_on":
-        return await run_welcome_switch(switches, event, group_id, True)
-    # 关闭本群欢迎语开关
-    if action == "welcome_off":
-        return await run_welcome_switch(switches, event, group_id, False)
-    # 打开本群入群验证，入群发码下一刀再接
-    if action == "verify_on":
-        return await run_verify_switch(switches, event, group_id, True)
-    # 关闭本群入群验证
-    if action == "verify_off":
-        return await run_verify_switch(switches, event, group_id, False)
-    # 打开本群邀请树记录
-    if action == "invite_on":
-        return await run_invite_switch(switches, event, group_id, True)
-    # 关闭本群邀请树记录
-    if action == "invite_off":
-        return await run_invite_switch(switches, event, group_id, False)
     # 查看本群已保存的欢迎语
     if action == "welcome_show":
         return show_welcome(welcome, event, group_id)

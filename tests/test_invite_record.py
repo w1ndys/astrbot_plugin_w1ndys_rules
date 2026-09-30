@@ -1,4 +1,4 @@
-# 入群写邀请边：开关要开，邀请人要能读到，拿不到或自己邀自己不写。
+# 入群写邀请边：WebUI 名单要开，邀请人要能读到，拿不到或自己邀自己不写。
 
 import sys
 import tempfile
@@ -11,10 +11,9 @@ PARENT = str(ROOT.parent)
 if PARENT not in sys.path:
     sys.path.insert(0, PARENT)
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.business.invite_record import record_join
 from astrbot_plugin_w1ndys_rules.data.invite_store import InviteStore
-from astrbot_plugin_w1ndys_rules.entity.constants import FEATURE_INVITE
+from astrbot_plugin_w1ndys_rules.entity.constants import CFG_INVITE_GROUPS
 
 
 class FakeMessage:
@@ -36,7 +35,7 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         db_path = Path(self._tmp.name) / "rules.db"
         self.store = InviteStore(db_path)
-        self.switches = GroupSwitchStore(db_path)
+        self.on = {CFG_INVITE_GROUPS: ["123"]}
         self.group_id = "123"
 
     def tearDown(self) -> None:
@@ -51,13 +50,12 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "10001", "999"
+            self.store, {}, event, self.group_id, "10001", "999"
         )
         self.assertFalse(recorded)
         self.assertIsNone(self.store.get_edge(self.group_id, "10001"))
 
     async def test_invite_records_inviter(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -66,7 +64,7 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "10001", "999"
+            self.store, self.on, event, self.group_id, "10001", "999"
         )
         self.assertTrue(recorded)
         edge = self.store.get_edge(self.group_id, "10001")
@@ -74,7 +72,6 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edge.sub_type, "invite")
 
     async def test_approve_records_operator(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -83,14 +80,13 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         await record_join(
-            self.store, self.switches, event, self.group_id, "10001", "999"
+            self.store, self.on, event, self.group_id, "10001", "999"
         )
         self.assertEqual(
             self.store.get_edge(self.group_id, "10001").sub_type, "approve"
         )
 
     async def test_rejoin_overwrites_inviter(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         first = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -106,17 +102,16 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         await record_join(
-            self.store, self.switches, first, self.group_id, "10001", "999"
+            self.store, self.on, first, self.group_id, "10001", "999"
         )
         await record_join(
-            self.store, self.switches, second, self.group_id, "10001", "999"
+            self.store, self.on, second, self.group_id, "10001", "999"
         )
         self.assertEqual(
             self.store.get_edge(self.group_id, "10001").inviter_id, "20002"
         )
 
     async def test_missing_operator_is_skipped(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         zero = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -127,18 +122,17 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
         empty = FakeEvent({"notice_type": "group_increase", "sub_type": "invite"})
         self.assertFalse(
             await record_join(
-                self.store, self.switches, zero, self.group_id, "10001", "999"
+                self.store, self.on, zero, self.group_id, "10001", "999"
             )
         )
         self.assertFalse(
             await record_join(
-                self.store, self.switches, empty, self.group_id, "10001", "999"
+                self.store, self.on, empty, self.group_id, "10001", "999"
             )
         )
         self.assertIsNone(self.store.get_edge(self.group_id, "10001"))
 
     async def test_self_invite_is_skipped(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -147,13 +141,12 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "10001", "999"
+            self.store, self.on, event, self.group_id, "10001", "999"
         )
         self.assertFalse(recorded)
         self.assertIsNone(self.store.get_edge(self.group_id, "10001"))
 
     async def test_bot_self_join_is_skipped(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -162,13 +155,12 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "999", "999"
+            self.store, self.on, event, self.group_id, "999", "999"
         )
         self.assertFalse(recorded)
         self.assertIsNone(self.store.get_edge(self.group_id, "999"))
 
     async def test_missing_user_is_skipped(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -177,15 +169,14 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "", "999"
+            self.store, self.on, event, self.group_id, "", "999"
         )
         self.assertFalse(recorded)
 
     async def test_plain_message_has_no_edge(self) -> None:
-        await self.switches.set_on(self.group_id, FEATURE_INVITE, True)
         event = FakeEvent({"post_type": "message"})
         recorded = await record_join(
-            self.store, self.switches, event, self.group_id, "10001", "999"
+            self.store, self.on, event, self.group_id, "10001", "999"
         )
         self.assertFalse(recorded)
         self.assertIsNone(self.store.get_edge(self.group_id, "10001"))

@@ -93,17 +93,17 @@ def install_astrbot_stubs() -> None:
 
 install_astrbot_stubs()
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.data.invite_store import InviteStore
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
+    CFG_INVITE_GROUPS,
+    CFG_VERIFY_GROUPS,
+    CFG_WELCOME_GROUPS,
     DEFAULT_WELCOME_TEXT,
-    FEATURE_INVITE,
-    FEATURE_VERIFY,
-    FEATURE_WELCOME,
     VERIFY_JOIN_MUTE_SECONDS,
 )
+
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
 
 
@@ -197,13 +197,15 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.invite = InviteStore(db_path)
-        self.plugin.switches = GroupSwitchStore(db_path)
+        self.plugin.config = {}
+
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     async def test_increase_sends_at_and_text(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
+        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+
         await self.plugin.welcome.set_content("123", "请先看群规")
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
@@ -222,7 +224,8 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_plain_group_message_ignored(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
+        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+
         event = FakeEvent({"post_type": "message"})
         sent = await collect(self.plugin.on_group_increase(event))
         self.assertFalse(event.stopped)
@@ -230,14 +233,16 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_increase_without_saved_text_uses_default(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
+        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
         self.assertEqual(yielded, [])
         self.assertEqual(event.sent[0][1].text, "\n" + DEFAULT_WELCOME_TEXT)
 
     async def test_increase_verify_only_sends_code(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
+        self.plugin.config = {CFG_VERIFY_GROUPS: ["123"]}
+
         event = FakeEvent({"notice_type": "group_increase"})
         sent = await collect(self.plugin.on_group_increase(event))
         code = self.plugin.verify.get_code("123", "10001")
@@ -262,8 +267,11 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("私聊", str(event.bot.api.calls[1][1]["message"]))
 
     async def test_increase_welcome_and_verify_are_separate(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_WELCOME, True)
-        await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
+        self.plugin.config = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_VERIFY_GROUPS: ["123"],
+        }
+
         await self.plugin.welcome.set_content("123", "请先看群规")
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
@@ -335,7 +343,8 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
 
     async def test_increase_records_invite_edge(self) -> None:
-        await self.plugin.switches.set_on("123", FEATURE_INVITE, True)
+        self.plugin.config = {CFG_INVITE_GROUPS: ["123"]}
+
         event = FakeEvent(
             {
                 "notice_type": "group_increase",

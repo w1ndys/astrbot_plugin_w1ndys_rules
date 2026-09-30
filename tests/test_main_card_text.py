@@ -69,7 +69,6 @@ def install_astrbot_stubs() -> None:
 
 install_astrbot_stubs()
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.data.activity_store import ActivityStore
 from astrbot_plugin_w1ndys_rules.data.forbidden_store import ForbiddenStore
 from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
@@ -172,7 +171,6 @@ class GroupCardEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.forbidden = ForbiddenStore(db_path)
         self.plugin.activity = ActivityStore(db_path)
-        self.plugin.switches = GroupSwitchStore(db_path)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

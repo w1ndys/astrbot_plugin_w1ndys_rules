@@ -1,7 +1,8 @@
 # 入口层：向 AstrBot 注册群消息监听、关键词/违禁配置工具，以及违禁词测试页。
 #
-# 群员命中关键词、管理员开/关/批量/欢迎语设查，都由代码直接回复，不经过模型；回复完拦住事件，
+# 群员命中关键词、管理员批量/欢迎语设查，都由代码直接回复，不经过模型；回复完拦住事件，
 # 模型不会再在后面补一句。这些命令不走指令过滤器，所以不需要唤醒前缀。
+
 # 违禁词测试只走插件 Pages，不经 QQ，也不撤回、禁言、发飞书。
 #
 # 匹配用的是 AstrBot 解析出来的纯文本 event.message_str，不是 OneBot 原始
@@ -22,7 +23,6 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
 
-from ._shared.group_switch_store import GroupSwitchStore
 from .business.activity import record_speak
 from .business.admin_command import handle_admin_command
 from .business.debug_payload import inspect_payload
@@ -84,7 +84,8 @@ class RulesPlugin(Star):
 
     def __init__(self, context: Context, config=None) -> None:
         super().__init__(context)
-        # 判断准则、样本、禁言秒数、提醒和 webhook 走 WebUI；触发词全局进数据库。
+        # 群名单、判断准则、样本、禁言秒数、提醒和 webhook 走 WebUI；触发词全局进数据库。
+
         self.config = config
         db_path = Path(StarTools.get_data_dir()) / DB_FILE_NAME
         self.keywords = KeywordStore(db_path)
@@ -94,7 +95,6 @@ class RulesPlugin(Star):
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
         self.activity = ActivityStore(db_path)
-        self.switches = GroupSwitchStore(db_path)
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
         self._remind_task = None
@@ -241,12 +241,12 @@ class RulesPlugin(Star):
         handled, reply = await handle_admin_command(
             self.context,
             self.keywords,
-            self.switches,
             self.welcome,
             event,
             group_id,
             text,
         )
+
         # 管理命令无论有没有回包都要停 LLM，避免带前缀时模型再接一句
         if handled:
             # 管理员有文案；群员误发静默
@@ -258,13 +258,13 @@ class RulesPlugin(Star):
         handled, reply = await handle_forbidden_message(
             self.config,
             self.forbidden,
-            self.switches,
             event,
             group_id,
             text,
             self._using_provider,
             activity=self.activity,
         )
+
         # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里。
         if handled:
             # 提醒留空就只处置，不在群里再说话
@@ -274,7 +274,8 @@ class RulesPlugin(Star):
             await self._note_speak(group_id, event)
             return
         # 入群验证只认私聊交码，群消息不再当交码
-        reply = pick_reply(self.keywords, self.switches, group_id, text)
+        reply = pick_reply(self.keywords, self.config, group_id, text)
+
         # 先记下这次发言，再决定要不要回关键词；必须在违禁判断之后，避免第一条就被当成活跃
         await self._note_speak(group_id, event)
         # 没命中就静默放过，让消息继续走后面的流程
@@ -322,23 +323,24 @@ class RulesPlugin(Star):
         # 入群通知没有文本，不拦住的话模型可能对空事件乱回
         _stop_llm(event)
         user_id = _sender_id_of(event)
-        # 开关开着才写邀请边；拿不到邀请人由业务层决定不记
+        # WebUI 名单里才写邀请边；拿不到邀请人由业务层决定不记
         await record_join(
             self.invite,
-            self.switches,
+            self.config,
             event,
             group_id,
             user_id,
             _self_id_of(event),
         )
-        welcome = pick_welcome(self.welcome, self.switches, group_id)
+        welcome = pick_welcome(self.welcome, self.config, group_id)
         verify = await start_pending(
             self.verify,
-            self.switches,
+            self.config,
             group_id,
             user_id,
             _self_id_of(event),
         )
+
         # 有欢迎语就当场发出。不能 yield：事件已停，框架不会再恢复本处理器，禁言和验证码就发不出去
         if welcome:
             await event.send(_join_at_text(event, user_id, welcome))

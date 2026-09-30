@@ -2,9 +2,9 @@
 
 import random
 
-from .._shared.group_switch_store import GroupSwitchStore
 from ..data.verify_store import VerifyStore
-from ..entity.constants import FEATURE_VERIFY, VERIFY_CODE_LEN, VERIFY_REMIND_MAX
+from ..entity.constants import CFG_VERIFY_GROUPS, VERIFY_CODE_LEN, VERIFY_REMIND_MAX
+from .feature_enable import feature_on
 
 
 def new_code(store: VerifyStore, group_id: str) -> str:
@@ -28,14 +28,14 @@ def hint_text(code: str) -> str:
 
 async def start_pending(
     store: VerifyStore,
-    switches: GroupSwitchStore,
+    config: object,
     group_id: str,
     user_id: str,
     self_id: str = "",
 ) -> str:
-    """开关开且不是机器人自己，才写 pending 并返回验证说明；否则空串。"""
-    # 默认关，没开过的群不建码
-    if not switches.is_on(group_id, FEATURE_VERIFY):
+    """名单里且不是机器人自己，才写 pending 并返回验证说明；否则空串。"""
+    # 空名单即关，没写过的群不建码
+    if not feature_on(config, CFG_VERIFY_GROUPS, group_id):
         return ""
     # 没有 QQ 号对不上人，不能建 pending
     if not user_id:

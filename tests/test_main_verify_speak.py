@@ -87,7 +87,6 @@ def install_astrbot_stubs() -> None:
 
 install_astrbot_stubs()
 
-from astrbot_plugin_w1ndys_rules._shared.group_switch_store import GroupSwitchStore
 from astrbot_plugin_w1ndys_rules.business.verify_handle import FAIL_REPLY, PASS_REPLY
 from astrbot_plugin_w1ndys_rules.data.activity_store import ActivityStore
 from astrbot_plugin_w1ndys_rules.data.forbidden_store import ForbiddenStore
@@ -95,8 +94,7 @@ from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
-    FEATURE_FORBIDDEN,
-    FEATURE_VERIFY,
+    CFG_FORBIDDEN_GROUPS,
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
@@ -188,13 +186,11 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.forbidden = ForbiddenStore(db_path)
         self.plugin.activity = ActivityStore(db_path)
-        self.plugin.switches = GroupSwitchStore(db_path)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     async def _pending(self, code: str = "123456") -> None:
-        await self.plugin.switches.set_on("123", FEATURE_VERIFY, True)
         await self.plugin.verify.put("123", "10001", code)
 
     async def test_group_text_does_not_verify(self) -> None:
@@ -242,7 +238,6 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_pending_ad_is_recalled_before_verify_fail(self) -> None:
         await self._pending()
-        await self.plugin.switches.set_on("123", FEATURE_FORBIDDEN, True)
         await self.plugin.forbidden.add(
             FORBIDDEN_GLOBAL_SCOPE, FORBIDDEN_KIND_TRIGGER, "勤工俭学服务中心"
         )
@@ -251,7 +246,9 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
             FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
             FORBIDDEN_CFG_MUTE_SECONDS: 60,
             FORBIDDEN_CFG_REMIND_TEXT: "请不要发广告。",
+            CFG_FORBIDDEN_GROUPS: ["123"],
         }
+
 
         async def get_provider():
             return FakeProvider("是")
