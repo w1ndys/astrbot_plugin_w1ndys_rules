@@ -47,3 +47,10 @@ class PagesNavTest(unittest.TestCase):
         self.assertNotIn("../nav.js", app)
         for name in SHARED:
             self.assertTrue((PAGE / name).is_file(), name)
+
+    def test_vendor_imports_have_spaces(self) -> None:
+        """压缩包 from\"./x\" 对不上 AstrBot 改写正则，请求会没 token 变成 401。"""
+        for name in VENDOR:
+            js = (PAGE / "vendor" / name).read_text()
+            self.assertNotIn('from"./', js, name)
+            self.assertNotIn('import"./', js, name)
