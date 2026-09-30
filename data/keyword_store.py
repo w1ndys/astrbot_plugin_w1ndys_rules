@@ -69,12 +69,32 @@ class KeywordStore:
 
     def list_rules(self, group_id: str) -> list[KeywordRule]:
         """本群全部规则，按关键词排序。只读内存快照，不查库。"""
-        rules = [
-            rule
-            for (rule_group_id, _), rule in self._snapshot.items()
-            if rule_group_id == group_id
-        ]
+        rules = []
+        for (rule_group_id, _), rule in self._snapshot.items():
+            # 只收这一群，别的群的规则不给 Agent 列表
+            if rule_group_id == group_id:
+                rules.append(rule)
         return sorted(rules, key=lambda rule: rule.keyword)
+
+    def list_page(
+        self, group_id: str, offset: int, limit: int
+    ) -> tuple[list[KeywordRule], int]:
+        """全部或按群号过滤后分页。offset 从 0 起，只读内存快照。"""
+        needle = group_id.strip()
+        rules: list[KeywordRule] = []
+        for rule in self._snapshot.values():
+            # 填了群号就只看这一群，空串看全部
+            if needle and rule.group_id != needle:
+                continue
+            rules.append(rule)
+        rules.sort(key=lambda rule: (rule.group_id, rule.keyword))
+        total = len(rules)
+        # 负偏移当成从开头切
+        offset = max(offset, 0)
+        # 每页条数非法时不要切片
+        if limit <= 0:
+            return [], total
+        return rules[offset : offset + limit], total
 
     async def upsert(self, group_id: str, keyword: str, reply: str) -> None:
         """新增或覆盖一条规则。写完立刻重建快照，下一条群消息就能命中。"""

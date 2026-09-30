@@ -51,6 +51,7 @@ from .business.group_card import handle_group_card
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import delete_rule, list_rules, write_rule
+from .business.keyword_page import list_keywords, remove_keyword, save_keyword
 from .business.keyword_reply import pick_reply
 from .business.verify_action import (
     mute_user,
@@ -104,6 +105,7 @@ class RulesPlugin(Star):
         self._remind_task = None
         self._start_remind_loop()
         self._register_forbidden_page()
+        self._register_keyword_pages()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
 
     def _start_remind_loop(self) -> None:
@@ -208,6 +210,69 @@ class RulesPlugin(Star):
         verdict = await complete_yes_no(provider, plan.system, plan.user)
         return json_response(test_result_payload(plan, verdict))
 
+    def _register_keyword_pages(self) -> None:
+        """注册关键词表接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/keyword/list",
+            self.page_keyword_list,
+            ["POST"],
+            "关键词列表",
+        )
+        register(
+            f"/{PLUGIN_NAME}/keyword/save",
+            self.page_keyword_save,
+            ["POST"],
+            "保存关键词",
+        )
+        register(
+            f"/{PLUGIN_NAME}/keyword/delete",
+            self.page_keyword_delete,
+            ["POST"],
+            "删除关键词",
+        )
+
+    async def page_keyword_list(self):
+        """WebUI：按群号过滤后分页列出关键词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出筛选条件
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        return json_response(list_keywords(self.keywords, payload))
+
+    async def page_keyword_save(self):
+        """WebUI：写入或覆盖一条关键词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出要保存的字段
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await save_keyword(self.context, self.keywords, payload)
+        # 校验失败用 400，页面直接展示原因
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    async def page_keyword_delete(self):
+        """WebUI：删除一条关键词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出主键
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await remove_keyword(self.keywords, payload)
+        # 没这条或字段空用 400
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
     async def _using_provider(self):
         """取当前对话提供商。测试页没有群会话，不传 umo。"""
         getter = getattr(self.context, "get_using_provider_async", None)
@@ -245,8 +310,6 @@ class RulesPlugin(Star):
         if text.startswith("/"):
             return
         handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
             self.welcome,
             event,
             group_id,

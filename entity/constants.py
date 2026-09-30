@@ -24,21 +24,17 @@ KEYWORD_MAX_LEN = 100
 # 回复文本长度上限。够写一段通知，又不至于被管理员误塞进一整篇文章。
 REPLY_MAX_LEN = 500
 
+
 # 列关键词时一次最多回多少条。超出的只报数量，不刷屏。
 KEYWORD_LIST_LIMIT = 30
-
-# 一次批量导入最多接受多少条非空行。再多就整批拒绝，避免误粘贴把库撑爆。
-KEYWORD_BATCH_MAX_LINES = 200
-
-# 批量导入回报里，冲突和跳过最多各列多少条。超出的只报数量。
-KEYWORD_BATCH_DETAIL_LIMIT = 10
+# WebUI 关键词表默认每页条数。
+KEYWORD_PAGE_SIZE = 20
 
 # 读不到 AstrBot 真实配置时的兜底唤醒前缀。AstrBot 自己的默认值也是 /。
 DEFAULT_WAKE_PREFIX = "/"
 
 # 群里直接发的管理命令。不走 AstrBot 指令过滤器，所以不需要唤醒前缀。
 # 功能开/关已迁到 WebUI 群号名单，群里不再认「开」「关」。
-CMD_KEYWORD_BATCH = "关键词 批量"
 CMD_WELCOME_SET = "欢迎语 设置"
 CMD_WELCOME_SHOW = "欢迎语"
 

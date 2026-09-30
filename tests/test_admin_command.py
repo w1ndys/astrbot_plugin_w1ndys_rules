@@ -1,4 +1,4 @@
-# 管理命令：欢迎语设/查重新认；功能开/关仍不认；批量只认 AstrBot 管理员。
+# 管理命令：欢迎语设/查仍认；功能开/关和关键词批量不再认。
 
 import sys
 import tempfile
@@ -15,24 +15,7 @@ from astrbot_plugin_w1ndys_rules.business.admin_command import (
     handle_admin_command,
     parse_admin_command,
 )
-from astrbot_plugin_w1ndys_rules.data.keyword_store import KeywordStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
-from astrbot_plugin_w1ndys_rules.entity.constants import CMD_KEYWORD_BATCH
-
-
-class FakeContext:
-    """测试用的唤醒前缀配置。自然语言校验仍要读前缀。"""
-
-    def __init__(self, prefixes: list[str] | None = None) -> None:
-        # 没指定前缀就用默认 /
-        if prefixes is None:
-            self._prefixes = ["/"]
-        else:
-            self._prefixes = prefixes
-
-    def get_config(self) -> dict:
-        """给 wake_prefix.prefixes 读的那一层配置。"""
-        return {"wake_prefix": self._prefixes}
 
 
 class FakeMessage:
@@ -60,9 +43,7 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         db_path = Path(self._tmp.name) / "rules.db"
-        self.keywords = KeywordStore(db_path)
         self.welcome = WelcomeStore(db_path)
-        self.context = FakeContext(["卷卷", "/"])
         self.group_id = "123456"
 
     def tearDown(self) -> None:
@@ -79,16 +60,12 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
             parse_admin_command("欢迎语 设置 欢迎入群~"), "welcome_set"
         )
 
-    def test_parse_batch_header(self) -> None:
-        self.assertEqual(parse_admin_command(CMD_KEYWORD_BATCH), "batch")
-        self.assertEqual(parse_admin_command("关键词 批量\n原神|好玩"), "batch")
-        self.assertEqual(parse_admin_command("关键词 批量 原神|好玩"), "batch")
-        self.assertEqual(parse_admin_command("关键词 批量导入"), "")
+    def test_batch_phrase_is_not_command(self) -> None:
+        self.assertEqual(parse_admin_command("关键词 批量"), "")
+        self.assertEqual(parse_admin_command("关键词 批量\n原神|好玩"), "")
 
     async def test_plain_text_is_not_handled(self) -> None:
         handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
             self.welcome,
             FakeEvent(admin=True),
             self.group_id,
@@ -99,8 +76,6 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_welcome_set_is_handled(self) -> None:
         handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
             self.welcome,
             FakeEvent(admin=True),
             self.group_id,
@@ -112,8 +87,6 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_welcome_stranger_is_silent(self) -> None:
         handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
             self.welcome,
             FakeEvent(admin=False),
             self.group_id,
@@ -125,8 +98,6 @@ class AdminCommandTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_qq_admin_can_set_welcome(self) -> None:
         handled, reply = await handle_admin_command(
-            self.context,
-            self.keywords,
             self.welcome,
             FakeEvent(admin=False, role="admin"),
             self.group_id,
