@@ -1,5 +1,5 @@
-# 业务层：图片违禁路。二维码层先跑；未检出再转写，有可见文字就送是/否模型。
-# 不走触发词。测试页不处置。
+# 业务层：图片违禁路。二维码层先跑；原图本地 OCR 有可见文字就送是/否模型。
+# 不读协议 payload 的 ocr/text。不走触发词。测试页不处置。
 
 import inspect
 
@@ -18,6 +18,7 @@ from .forbidden_judge import (
     complete_yes_no,
     config_text,
 )
+from .forbidden_ocr import ocr_text_from_b64
 from .forbidden_qr import qr_found_in_b64
 
 _STICKER_TYPES = {"Face", "Mface"}
@@ -68,6 +69,7 @@ async def handle_forbidden_images(
     log_store=None,
     decoder=None,
     transcribe=None,
+    ocr=None,
 ) -> tuple[bool, str]:
     """图片路：先二维码，再转写有字就送模型。没有图返回未处置。"""
     comps = _image_comps(event)
@@ -86,7 +88,7 @@ async def handle_forbidden_images(
             FORBIDDEN_REASON_QRCODE,
         )
         return True, remind
-    text = await _transcript_of(event, comps, transcribe)
+    text = await _transcript_of(event, comps, transcribe, ocr)
     plan = plan_image_test(config, text, False)
     # 空转写或没设定，不打模型
     if plan.status != "ready":
@@ -135,7 +137,7 @@ def _image_comps(event: object) -> list:
 
 
 def skip_vision(comp: object) -> bool:
-    """表情、贴纸、gif 不打视觉转写，仍要过二维码层。"""
+    """表情、贴纸、gif 不跑本地 OCR，仍要过二维码层。"""
     name = type(comp).__name__
     # 协议表情不当广告载体
     if name in _STICKER_TYPES:
@@ -158,9 +160,9 @@ async def _qr_hit(comps: list, decoder) -> bool:
     return False
 
 
-async def _transcript_of(event: object, comps: list, transcribe) -> str:
-    """转写可见文字。测试可注入；贴纸不向视觉要描述。"""
-    # 测试页和回归直接给转写
+async def _transcript_of(event: object, comps: list, transcribe, ocr=None) -> str:
+    """原图本地 OCR。测试可注入整段转写；贴纸不跑 OCR。"""
+    # 回归直接给转写，不打 RapidOCR
     if transcribe is not None:
         result = transcribe(event)
         if inspect.isawaitable(result):
@@ -168,13 +170,18 @@ async def _transcript_of(event: object, comps: list, transcribe) -> str:
         return str(result or "")
     parts = []
     for comp in comps:
-        # 贴纸不打视觉模型
+        # 贴纸不当广告图，不跑 OCR
         if skip_vision(comp):
             continue
-        ocr = getattr(comp, "ocr", None) or getattr(comp, "text", None)
-        # 协议端自带 OCR 就用
-        if ocr:
-            parts.append(str(ocr))
+        raw = await _comp_b64(comp)
+        # 下图失败当这张没字
+        if not raw:
+            continue
+        text = ocr_text_from_b64(raw, ocr)
+        # 没认出字就看下一张
+        if not text:
+            continue
+        parts.append(text)
     return "\n".join(parts)
 
 

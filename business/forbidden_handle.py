@@ -21,6 +21,7 @@ async def handle_forbidden_message(
     log_store=None,
     decoder=None,
     transcribe=None,
+    ocr=None,
 ) -> tuple[bool, str]:
     """处理一条群消息的违禁判断。handled=True 时入口要停 LLM。
 
@@ -41,6 +42,7 @@ async def handle_forbidden_message(
         log_store,
         decoder,
         transcribe,
+        ocr,
     )
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:

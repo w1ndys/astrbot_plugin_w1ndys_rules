@@ -1,4 +1,4 @@
-# 图片路：二维码直接违禁；转写有可见文字就送模型，不走触发词。
+# 图片路：二维码直接违禁；原图 OCR 有可见文字就送模型，不走触发词。
 
 import sys
 import unittest
@@ -195,6 +195,20 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             transcribe=lambda _event: "",
         )
         self.assertFalse(handled)
+
+    async def test_local_ocr_hits_without_payload(self) -> None:
+        event = FakeEvent()
+        handled, _reply = await handle_forbidden_message(
+            ready_config(),
+            FakeStore(),
+            event,
+            "123",
+            "",
+            self._provider("是"),
+            decoder=lambda data: False,
+            ocr=lambda _data: NO_TRIGGER,
+        )
+        self.assertTrue(handled)
 
 
 
