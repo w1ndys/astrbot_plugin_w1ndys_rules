@@ -1,5 +1,5 @@
 name: astrbot_plugin_w1ndys_rules
-display_name: 群规
+display_name: w1ndys 的群管
 short_desc: 按群管理关键词回复、欢迎语、入群验证和邀请树；违禁触发词全局共用，判断仅在触发后调用模型
 desc: |
   AstrBot 插件：群里的固定规则。关键词回复、欢迎语、入群验证、邀请树由代码处理；

@@ -1,6 +1,6 @@
 # astrbot_plugin_w1ndys_rules
 
-AstrBot 群规插件。用中文交流。
+AstrBot 插件：w1ndys 的群管。用中文交流。
 
 ## 编码契约
 
