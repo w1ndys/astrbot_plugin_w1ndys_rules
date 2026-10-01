@@ -1,5 +1,15 @@
-# 业务层：从原始 payload 的 message 取出合并转发节点正文。
-# 不调 get_forward_msg。节点可以再套 forward，按层递归抽字。
+# 业务层：从原始 payload 的 message 取出本层转发记录正文。
+# 本层只含一层；嵌套转发按 id 递归 get_forward_msg。
+
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
+
+from .forbidden_action import call_result
 
 _PLACEHOLDERS = (
     "[转发消息]",
@@ -162,3 +172,181 @@ def _node_body(node: dict) -> object:
         return body
     return data.get("message")
 
+
+
+async def resolve_audit_text(event: object, message_str: str) -> str:
+    """本层 message 抽字，嵌套转发再按 id 拉。"""
+    outer = (message_str or "").strip()
+    inner = collect_forward_text(event)
+    fetched = await fetch_forward_text(event)
+    # 嵌套层拉到的字拼在本层后面
+    if fetched:
+        inner = (inner + "\n" + fetched).strip() if inner else fetched
+    # 内层仍空：占位符也原样交出去，后面当没命中
+    if not inner:
+        # 只是转发占位却抽不出字，方便对照漏检
+        if outer in _PLACEHOLDERS:
+            _log.info("[rules] forward empty placeholder=%s", outer)
+        return message_str or ""
+    # 外层只是转发占位符，用节点正文去审
+    if not outer or outer in _PLACEHOLDERS:
+        _log.info("[rules] forward inner_len=%s", len(inner))
+        return inner
+    return outer + "\n" + inner
+
+async def fetch_forward_text(event: object) -> str:
+    """本层 message 里没展开的嵌套 forward id，用 get_forward_msg 拉。"""
+    ids = collect_forward_ids(event)
+    # 没有待拉的 id
+    if not ids:
+        return ""
+    return await _fetch_by_ids(event, ids)
+
+
+def collect_forward_ids(event: object) -> list:
+    """从本层 message 整棵树收集还没带节点的 forward id。"""
+    ids = []
+    seen = set()
+    for fid in _ids_in(_message_list(_raw_message(event)), 1):
+        # 空或重复丢掉
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        ids.append(fid)
+    # payload.message 不是列表时，退回消息链上的 Forward id
+    if not ids:
+        _ids_from_chain(event, ids, seen)
+    return ids
+
+
+def _ids_from_chain(event: object, ids: list, seen: set) -> None:
+    """AstrBot 消息链里的 Forward 组件也带 id。"""
+    obj = getattr(event, "message_obj", None)
+    # 没有消息对象就没有链
+    if obj is None:
+        return
+    chain = getattr(obj, "message", None)
+    # 链必须是列表
+    if not isinstance(chain, list):
+        return
+    for comp in chain:
+        name = type(comp).__name__.lower()
+        # 只认 Forward 组件
+        if name != "forward":
+            continue
+        fid = str(getattr(comp, "id", "") or "").strip()
+        # 空 id 或重复丢掉
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        ids.append(fid)
+
+
+def _id_of_forward(seg: dict) -> str:
+    """forward 段上的资源 id。"""
+    data = seg.get("data")
+    # 没有 data 就看段自己
+    if not isinstance(data, dict):
+        data = {}
+    fid = data.get("id") or seg.get("id") or ""
+    return str(fid).strip()
+
+
+async def _fetch_by_ids(event: object, ids: list) -> str:
+    """按队列拉转发，嵌套 id 继续入队。"""
+    seen = set()
+    parts = []
+    pending = list(ids)
+    hops = 0
+    while pending:
+        # 套太深就停
+        if hops >= _MAX_DEPTH:
+            break
+        fid = str(pending.pop(0) or "").strip()
+        # 空或已经拉过
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        hops += 1
+        nodes = _nodes_from_result(await _get_forward(event, fid))
+        text = _walk(nodes, 1)
+        # 这包有字就留下
+        if text:
+            parts.append(text)
+        for nid in _ids_in(nodes, 1):
+            # 还没拉过的嵌套 id 入队
+            if nid not in seen:
+                pending.append(nid)
+    return "\n".join(parts)
+
+
+async def _get_forward(event: object, fid: str) -> object:
+    """NapCat 用 id，有的实现用 message_id。"""
+    raw = await call_result(event, "get_forward_msg", id=fid)
+    # 第一种参数已经拿到节点
+    if _nodes_from_result(raw):
+        return raw
+    return await call_result(event, "get_forward_msg", message_id=fid)
+
+
+def _nodes_from_result(raw: object) -> list:
+    """get_forward_msg 回报里的节点列表。"""
+    # 直接回列表
+    if isinstance(raw, list):
+        return raw
+    getter = getattr(raw, "get", None)
+    # 不是对象就没有节点
+    if not callable(getter):
+        return []
+    for key in ("messages", "message", "content"):
+        val = getter(key)
+        # 常见是 {messages: [...]}
+        if isinstance(val, list):
+            return val
+    data = getter("data")
+    # 包了一层 data
+    if isinstance(data, (dict, list)):
+        return _nodes_from_result(data)
+    return []
+
+
+def _ids_in(obj: object, depth: int) -> list:
+    """从已拉到的节点里再找出嵌套 forward id。"""
+    # 套太深就停
+    if depth > _MAX_DEPTH:
+        return []
+    if isinstance(obj, list):
+        return _ids_in_list(obj, depth)
+    # 不是对象就没有 id
+    if not isinstance(obj, dict):
+        return []
+    kind = str(obj.get("type") or "").lower()
+    # 合并转发段上的 id
+    if kind in _FORWARD_TYPES:
+        return _ids_in_forward(obj, depth)
+    body = _node_body(obj)
+    # 节点正文继续找
+    if body is None:
+        return []
+    return _ids_in(body, depth + 1)
+
+
+def _ids_in_list(items: list, depth: int) -> list:
+    """列表里每一项的嵌套 id。"""
+    ids = []
+    for item in items:
+        ids.extend(_ids_in(item, depth))
+    return ids
+
+
+def _ids_in_forward(seg: dict, depth: int) -> list:
+    """没带节点的 forward 才把 id 入队，避免有正文还再拉一遍。"""
+    ids = []
+    nodes = _forward_nodes(seg)
+    has_nodes = isinstance(nodes, list) and len(nodes) > 0
+    fid = _id_of_forward(seg)
+    # 已经带节点就不必按这个 id 再拉
+    if fid and not has_nodes:
+        ids.append(fid)
+    ids.extend(_ids_in(nodes, depth + 1))
+    return ids
