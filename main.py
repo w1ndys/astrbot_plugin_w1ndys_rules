@@ -41,6 +41,8 @@ from .business.forbidden_admin import (
     update_item,
 )
 from .business.forbidden_handle import handle_forbidden_message
+from .business.forbidden_forward import message_audit_text
+
 from .business.forbidden_image import message_has_image, plan_image_test
 from .business.forbidden_judge import (
     complete_yes_no,
@@ -458,7 +460,8 @@ class RulesPlugin(Star):
         # 拿不到群号就不是群消息，交给别的处理器
         if not group_id:
             return
-        text = event.message_str or ""
+        text = message_audit_text(event, event.message_str or "")
+
         # 纯图没有正文，单独记下，方便对照漏检
         if message_has_image(event):
             logger.info(
