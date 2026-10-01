@@ -100,7 +100,7 @@ FORBIDDEN_LOG_PAGE_SIZE = 20
 
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6
-DEFAULT_VERIFY_MUTE_SECONDS = 600
+DEFAULT_VERIFY_MUTE_SECONDS = 2592000
 VERIFY_CFG_MUTE_SECONDS = "verify_mute_seconds"
 VERIFY_JOIN_MUTE_SECONDS = 2592000
 # 群内提醒固定隔 2 小时。只在北京时间 8 点到 22 点发（含 8 点，不含 22 点）。

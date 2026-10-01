@@ -33,7 +33,7 @@ def code_in_text(text: str, code: str) -> bool:
 def mute_seconds(config: object) -> int:
     """从 WebUI 取未通过禁言秒数。空值用默认，负数当 0，超过 QQ 上限就夹住。"""
     raw = _config_text(config, VERIFY_CFG_MUTE_SECONDS)
-    # 没填就用 600 秒
+    # 没填就用默认 30 天
     if not raw.strip():
         return DEFAULT_VERIFY_MUTE_SECONDS
     try:
