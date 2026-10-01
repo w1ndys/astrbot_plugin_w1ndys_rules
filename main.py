@@ -1,7 +1,7 @@
 # 入口层：向 AstrBot 注册群消息监听、关键词/违禁配置工具，以及违禁词测试页。
 #
-# 群员命中关键词、管理员关键词批量，都由代码直接回复，不经过模型；回复完拦住事件，
-# 模型不会再在后面补一句。这些命令不走指令过滤器，所以不需要唤醒前缀。
+# 群员命中关键词由代码直接回复，不经过模型；回复完拦住事件，
+# 模型不会再在后面补一句。关键词增删改查只走插件 Pages。
 
 
 # 违禁词测试只走插件 Pages，不经 QQ，也不撤回、禁言、发飞书。
@@ -34,15 +34,8 @@ from .business.blacklist_admin import (
     list_users,
 )
 from .business.debug_payload import inspect_payload
-from .business.forbidden_admin import (
-    add_item,
-    delete_item,
-    list_items,
-    update_item,
-)
-from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_forward import message_audit_text
-
+from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_image import message_has_image, plan_image_test
 from .business.forbidden_judge import (
     complete_yes_no,
@@ -50,17 +43,15 @@ from .business.forbidden_judge import (
     test_result_payload,
 )
 from .business.forbidden_log_page import get_log, list_logs
-from .business.group_card import handle_group_card
-from .business.invite_query import show_downline, show_upline
-from .business.invite_record import record_join
-from .business.keyword_admin import delete_rule, list_rules, write_rule
-from .business.keyword_page import list_keywords, remove_keyword, save_keyword
-from .business.welcome_page import list_welcomes, remove_welcome, save_welcome
 from .business.forbidden_trigger_page import (
     list_triggers,
     remove_trigger,
     save_trigger,
 )
+from .business.group_card import handle_group_card
+from .business.invite_query import show_downline, show_upline
+from .business.invite_record import record_join
+from .business.keyword_page import list_keywords, remove_keyword, save_keyword
 from .business.keyword_reply import pick_reply
 from .business.settings_page import get_settings, save_settings
 from .business.verify_action import (
@@ -75,6 +66,7 @@ from .business.verify_join import start_pending
 from .business.verify_leave import drop_pending, is_group_decrease
 from .business.verify_remind import send_due_remind
 from .business.verify_unmute import is_admin_unmute
+from .business.welcome_page import list_welcomes, remove_welcome, save_welcome
 from .business.welcome_send import is_group_increase, pick_welcome
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_log_store import ForbiddenLogStore
@@ -693,66 +685,6 @@ class RulesPlugin(Star):
         await recall_message_id(event, prompt_id)
         yield event.plain_result(PASS_REPLY)
 
-    @filter.llm_tool(name="forbidden_add")
-    async def tool_forbidden_add(
-        self,
-        event: AstrMessageEvent,
-        content: str,
-    ) -> str:
-        """新增一条全局违禁触发词。只在管理员明确要求新增触发词时调用。
-        写操作直接执行，不要再向管理员确认。最终回复要如实保留工具返回的内容。
-        违禁样本不走这个工具，请让管理员去插件 Pages 控制台填写。
-
-        Args:
-            content(string): 要新增的完整触发词
-        """
-        return await _with_group(
-            event, lambda _gid: add_item(self.forbidden, event, content)
-        )
-
-    @filter.llm_tool(name="forbidden_update")
-    async def tool_forbidden_update(
-        self,
-        event: AstrMessageEvent,
-        old_content: str,
-        new_content: str,
-    ) -> str:
-        """修改一条已有的全局违禁触发词，不存在时不会新增。
-        写操作直接执行，不要再向管理员确认。最终回复要如实保留修改前后的内容。
-
-        Args:
-            old_content(string): 数据库中现有的完整触发词
-            new_content(string): 修改后的完整触发词
-        """
-        return await _with_group(
-            event,
-            lambda _gid: update_item(
-                self.forbidden, event, old_content, new_content
-            ),
-        )
-
-    @filter.llm_tool(name="forbidden_delete")
-    async def tool_forbidden_delete(
-        self,
-        event: AstrMessageEvent,
-        content: str,
-    ) -> str:
-        """删除一条全局违禁触发词。最终回复只转达工具结果。
-
-        Args:
-            content(string): 要删除的完整触发词
-        """
-        return await _with_group(
-            event, lambda _gid: delete_item(self.forbidden, event, content)
-        )
-
-    @filter.llm_tool(name="forbidden_list")
-    async def tool_forbidden_list(self, event: AstrMessageEvent) -> str:
-        """列出全局违禁触发词。结果必须如实转达。"""
-        return await _with_group(
-            event, lambda _gid: list_items(self.forbidden, event)
-        )
-
     @filter.llm_tool(name="blacklist_add")
     async def tool_blacklist_add(
         self, event: AstrMessageEvent, user_id: str
@@ -917,57 +849,6 @@ class RulesPlugin(Star):
             lambda group_id: inspect_payload(
                 event, group_id, message_id, sender, keyword
             ),
-        )
-
-    @filter.llm_tool(name="keyword_set")
-    async def tool_keyword_set(
-        self,
-        event: AstrMessageEvent,
-        keyword: str,
-        reply: str,
-    ) -> str:
-        """写入本群一条关键词回复规则。添加和修改都用这个工具，不要先猜本群有没有这条。
-        没有就新增，有就覆盖，工具会如实回报是「已添加」还是「已覆盖」。
-        触发条件是群员整条消息与该关键词完全相等。只在管理员明确要求添加或修改时调用。
-        写操作直接执行。最终回复只要转达工具那一句，不要自己说已经写好。
-
-        Args:
-            keyword(string): 群员要发送的关键词，必须与整条消息完全一致；不能以唤醒前缀开头
-            reply(string): 命中后机器人回复的内容
-        """
-        return await _with_group(
-            event,
-            lambda group_id: write_rule(
-                self.context, self.keywords, event, group_id, keyword, reply
-            ),
-        )
-
-    @filter.llm_tool(name="keyword_delete")
-    async def tool_keyword_delete(
-        self,
-        event: AstrMessageEvent,
-        keyword: str,
-    ) -> str:
-        """删除本群的一条关键词回复规则。不要凭记忆判断有没有这条，一律调用本工具。
-        删没删掉由工具回报，不要自己说已经删掉。最终回复只要转达工具那一句。
-
-        Args:
-            keyword(string): 要删除的关键词，必须与整条消息完全一致
-        """
-        return await _with_group(
-            event,
-            lambda group_id: delete_rule(
-                self.keywords, event, group_id, keyword
-            ),
-        )
-
-    @filter.llm_tool(name="keyword_list")
-    async def tool_keyword_list(self, event: AstrMessageEvent) -> str:
-        """列出本群现有的关键词回复规则。管理员想知道本群配了什么时才调用。
-        把结果如实转达，不要自己改写或补充。
-        """
-        return await _with_group(
-            event, lambda group_id: list_rules(self.keywords, event, group_id)
         )
 
 

@@ -1,4 +1,4 @@
-# 业务层：管理员用自然语言增删改查全局违禁触发词。样本走 WebUI，这里不管。
+# 业务层：全局违禁触发词的校验和写入。Pages 表复用清洗函数。
 
 from ..data.forbidden_store import ForbiddenStore
 from ..entity.constants import (

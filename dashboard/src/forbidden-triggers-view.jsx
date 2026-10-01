@@ -123,7 +123,7 @@ export function ForbiddenTriggersView() {
   return (
     <Card title="违禁触发词">
       <p className="hint">
-        全局共用。文本路要先命中这里的词才送模型。图片 OCR 有字仍不走触发词。群里自然语言增删改查还在。
+        全局共用。文本路要先命中这里的词才送模型。图片 OCR 有字仍不走触发词。增删改查只走本页。
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
