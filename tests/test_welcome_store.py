@@ -49,3 +49,21 @@ class WelcomeStoreTest(unittest.IsolatedAsyncioTestCase):
         await self.store.set_content("123", "持久欢迎")
         reopened = WelcomeStore(self.db_path)
         self.assertEqual(reopened.get_content("123"), "持久欢迎")
+
+    async def test_list_page_filters_and_pages(self) -> None:
+        await self.store.set_content("111", "甲")
+        await self.store.set_content("222", "乙")
+        items, total = self.store.list_page("111", 0, 10)
+        self.assertEqual(total, 1)
+        self.assertEqual(items, [("111", "甲")])
+        page, total = self.store.list_page("", 1, 1)
+        self.assertEqual(total, 2)
+        self.assertEqual(len(page), 1)
+
+    async def test_delete_removes_row(self) -> None:
+        await self.store.set_content("123", "欢迎")
+        removed = await self.store.delete("123")
+        self.assertTrue(removed)
+        self.assertIsNone(self.store.get_content("123"))
+        removed = await self.store.delete("123")
+        self.assertFalse(removed)

@@ -66,3 +66,47 @@ class WelcomeStore:
             conn.commit()
         finally:
             conn.close()
+
+    def list_page(
+        self, group_id: str, offset: int, limit: int
+    ) -> tuple:
+        """全部或按群号过滤后分页。offset 从 0 起，直接查库。"""
+        needle = group_id.strip()
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT group_id, content FROM welcome_text ORDER BY group_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        items = []
+        for row in rows:
+            gid = str(row[0])
+            # 填了群号就只看这一群，空串看全部
+            if needle and gid != needle:
+                continue
+            items.append((gid, str(row[1])))
+        total = len(items)
+        offset = max(offset, 0)
+        # 每页条数非法时不要切片
+        if limit <= 0:
+            return [], total
+        return items[offset : offset + limit], total
+
+    async def delete(self, group_id: str) -> bool:
+        """删掉本群独立配置。返回是否真删掉了一行。"""
+        async with self._lock:
+            return await asyncio.to_thread(self._delete_sync, group_id)
+
+    def _delete_sync(self, group_id: str) -> bool:
+        """同步删库，给 to_thread 用。没这行返回 False。"""
+        conn = connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                "DELETE FROM welcome_text WHERE group_id = ?",
+                (group_id,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()

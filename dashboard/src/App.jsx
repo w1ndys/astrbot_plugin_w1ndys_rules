@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ConfigProvider, Tabs, theme } from "antd";
 import { PAGE_TABS } from "./nav.js";
 import { SettingsView } from "./settings-view.jsx";
+import { WelcomeView } from "./welcome-view.jsx";
 import { KeywordsView } from "./keywords-view.jsx";
 import { ForbiddenTriggersView } from "./forbidden-triggers-view.jsx";
 import { ForbiddenTestView } from "./forbidden-test-view.jsx";
@@ -31,6 +32,8 @@ export default function App() {
     let children = null;
     if (tab.key === "settings") {
       children = <SettingsView />;
+    } else if (tab.key === "welcome") {
+      children = <WelcomeView />;
     } else if (tab.key === "keywords") {
       children = <KeywordsView />;
     } else if (tab.key === "forbidden-triggers") {

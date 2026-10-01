@@ -46,6 +46,8 @@ INVITE_DOWNLINE_LIMIT = 30
 
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500
+# WebUI 欢迎语表默认每页条数。
+WELCOME_PAGE_SIZE = 20
 # WebUI：没单独设过的开启群用这句全局文案。留空则用默认句。
 CFG_WELCOME_TEXT = "welcome_text"
 # 开了名单但还没填文案时，入群发送这句。沿用旧 GroupWelcome 的默认句。

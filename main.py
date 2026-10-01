@@ -55,6 +55,7 @@ from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import delete_rule, list_rules, write_rule
 from .business.keyword_page import list_keywords, remove_keyword, save_keyword
+from .business.welcome_page import list_welcomes, remove_welcome, save_welcome
 from .business.forbidden_trigger_page import (
     list_triggers,
     remove_trigger,
@@ -115,6 +116,7 @@ class RulesPlugin(Star):
         self._start_remind_loop()
         self._register_forbidden_page()
         self._register_keyword_pages()
+        self._register_welcome_pages()
         self._register_trigger_pages()
         self._register_log_pages()
         self._register_settings_pages()
@@ -291,6 +293,69 @@ class RulesPlugin(Star):
             return error_response("请求体必须是 JSON 对象", status_code=400)
         ok, message = await remove_keyword(self.keywords, payload)
         # 没这条或字段空用 400
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    def _register_welcome_pages(self) -> None:
+        """注册欢迎语表接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/welcome/list",
+            self.page_welcome_list,
+            ["POST"],
+            "欢迎语列表",
+        )
+        register(
+            f"/{PLUGIN_NAME}/welcome/save",
+            self.page_welcome_save,
+            ["POST"],
+            "保存欢迎语",
+        )
+        register(
+            f"/{PLUGIN_NAME}/welcome/delete",
+            self.page_welcome_delete,
+            ["POST"],
+            "删除欢迎语",
+        )
+
+    async def page_welcome_list(self):
+        """Pages：按群号过滤后分页列出欢迎语覆盖。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出筛选条件
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        return json_response(list_welcomes(self.welcome, payload))
+
+    async def page_welcome_save(self):
+        """Pages：写入或覆盖一条欢迎语。空文案关闭本群。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出要保存的字段
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await save_welcome(self.welcome, payload)
+        # 校验失败用 400，页面直接展示原因
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    async def page_welcome_delete(self):
+        """Pages：删除本群独立配置，改回继承全局。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出主键
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await remove_welcome(self.welcome, payload)
+        # 没这行或字段空用 400
         if not ok:
             return error_response(message, status_code=400)
         return json_response({"message": message})
