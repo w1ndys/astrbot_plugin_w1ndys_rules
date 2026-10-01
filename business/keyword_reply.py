@@ -1,13 +1,18 @@
 # 业务层：群员发了一条消息，要不要用关键词回复、回什么。
 # 不碰数据库（只问内存快照），不碰 AstrBot（只返回文本）。
 
-import logging
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.keyword_store import KeywordStore
 from ..entity.constants import CFG_KEYWORD_GROUPS
 from .feature_enable import feature_on
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 
 def pick_reply(

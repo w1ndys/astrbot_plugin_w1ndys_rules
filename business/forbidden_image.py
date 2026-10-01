@@ -2,7 +2,15 @@
 # 不读协议 payload 的 ocr/text。不走触发词。测试页不处置。
 
 import inspect
-import logging
+
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
+
 from ..entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_SAMPLES,
@@ -21,7 +29,6 @@ from .forbidden_judge import (
 from .forbidden_ocr import ocr_text_from_b64
 from .forbidden_qr import qr_found_in_b64
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 _STICKER_TYPES = {"Face", "Mface"}
 
 def message_has_image(event: object) -> bool:

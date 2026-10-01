@@ -5,13 +5,18 @@
 #
 # 无权的人误发要静默：这条路径会看到所有群消息，回拒绝语会刷屏。
 
-import logging
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.welcome_store import WelcomeStore
 from ..entity.constants import CMD_WELCOME_SET, CMD_WELCOME_SHOW
 from .welcome_admin import can_edit_welcome, set_welcome, show_welcome
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def _has_command_header(first: str, cmd: str) -> bool:
     """第一行是命令，或命令后面紧跟空格/Tab 再跟正文。"""

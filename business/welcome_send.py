@@ -3,7 +3,13 @@
 # 本群独立配置为空串则关闭，优先于 WebUI 开启名单。
 # 没写过独立配置时，开启群用全局文案，全局没填用默认句。
 
-import logging
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.welcome_store import WelcomeStore
 from ..entity.constants import (
@@ -14,7 +20,6 @@ from ..entity.constants import (
 )
 from .feature_enable import feature_on
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def is_group_increase(event: object) -> bool:
     """当前事件是不是 OneBot 的群成员增加通知。"""

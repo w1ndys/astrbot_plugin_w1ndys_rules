@@ -5,13 +5,18 @@
 # 也就是 operator_id。拿不到 operator_id 或自己邀请自己时不记，宁可不写也不造假边。
 # 不判断名单以外的事，不发消息，不碰 AstrBot。
 
-import logging
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.invite_store import InviteStore
 from ..entity.constants import CFG_INVITE_GROUPS
 from .feature_enable import feature_on
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 async def record_join(
     store: InviteStore,
     config: object,

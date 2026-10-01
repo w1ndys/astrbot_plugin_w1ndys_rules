@@ -1,7 +1,13 @@
 # 业务层：群消息要不要走违禁判断、命中后怎么处置。
 # 文本路要触发词。测试页不走这里。
 
-import logging
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.forbidden_store import ForbiddenStore
 from ..entity.constants import CFG_FORBIDDEN_GROUPS, FORBIDDEN_REASON_MODEL
@@ -11,7 +17,6 @@ from .forbidden_image import handle_forbidden_images, message_has_image
 from .forbidden_judge import complete_yes_no, plan_forbidden_test
 from .qq_role import is_qq_group_staff, speaker_qq_role
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 
 async def handle_forbidden_message(

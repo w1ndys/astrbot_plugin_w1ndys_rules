@@ -1,13 +1,19 @@
 # 业务层：入群时要不要建 pending、验证说明怎么写。不发消息，不禁言，不碰 AstrBot。
 
-import logging
 import random
+
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..data.verify_store import VerifyStore
 from ..entity.constants import CFG_VERIFY_GROUPS, VERIFY_CODE_LEN, VERIFY_REMIND_MAX
 from .feature_enable import feature_on
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def new_code(store: VerifyStore, group_id: str) -> str:
     """生成本群当前未占用的 6 位数字码。"""

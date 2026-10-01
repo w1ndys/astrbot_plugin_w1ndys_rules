@@ -2,9 +2,15 @@
 # 测试可传入 reader。
 
 import base64
-import logging
 
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
+
 _engine = None
 _engine_failed = False
 

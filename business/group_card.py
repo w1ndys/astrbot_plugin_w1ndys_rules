@@ -2,7 +2,14 @@
 # 单独线路，不看触发词，不送模型。命中后走和违禁词一样的撤回、禁言、飞书。
 
 import json
-import logging
+
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..entity.constants import (
     FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
@@ -12,8 +19,6 @@ from ..entity.constants import (
 from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .qq_role import is_qq_group_staff
-
-_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 async def handle_group_card(
     config: object,
