@@ -125,7 +125,7 @@
     "type": "bool",
     "default": false,
     "invisible": true,
-    "hint": "开了之后，消息里出现微信号或 wxid_ 就当命中触发词，再送模型判断。默认关。"
+    "hint": "开了之后，带加微信/加v/vx/薇信等口令，或无口令但出现字母数字混合 6～20 位账号（不含纯英文词、网址、手机、QQ）就当命中触发词。默认关。"
   },
   "forbidden_block_group_card_groups": {
     "description": "拦截群名片的群",

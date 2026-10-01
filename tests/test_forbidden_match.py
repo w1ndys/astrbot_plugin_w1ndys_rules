@@ -27,7 +27,6 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
 )
 
 
-
 class ForbiddenMatchTest(unittest.TestCase):
     def test_chinese_contains(self) -> None:
         hit = find_trigger("大家来看这个广告链接", ["广告", "加群"])
@@ -88,3 +87,37 @@ class PatternTriggerTest(unittest.TestCase):
             "",
         )
 
+
+    def test_wechat_hint_phrases(self) -> None:
+        """口令扩到加微信/加v/vx/薇信，纯字母账号也认。"""
+        cfg = {FORBIDDEN_CFG_TRIGGER_WECHAT: True}
+        self.assertEqual(
+            find_pattern_trigger("加微信 hellohello", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+        self.assertEqual(
+            find_pattern_trigger("加v abcdef", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+        self.assertEqual(
+            find_pattern_trigger("vx: abcdef", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+        self.assertEqual(
+            find_pattern_trigger("薇信 abcdef", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+        self.assertEqual(
+            find_pattern_trigger("wxid_abc123", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+
+    def test_wechat_bare_mixed_not_english(self) -> None:
+        """无口令只认字母数字都有的 6～20 位，纯英文和网址不送。"""
+        cfg = {FORBIDDEN_CFG_TRIGGER_WECHAT: True}
+        self.assertEqual(
+            find_pattern_trigger("私聊 abc12xyz", cfg),
+            FORBIDDEN_PATTERN_WECHAT,
+        )
+        self.assertEqual(find_pattern_trigger("今天 hellohello", cfg), "")
+        self.assertEqual(find_pattern_trigger("看 example.com", cfg), "")

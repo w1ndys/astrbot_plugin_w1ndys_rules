@@ -26,17 +26,23 @@ _URL_RE = re.compile(
     r"(?<![@\w])[a-z0-9][-a-z0-9]{0,62}\."
     r"(?:com|cn|net|org|cc|xyz|top|vip|club|app|io|me|tv|co)"
     r"(?:/[^\s]*)?",
-    re.I,
+    re.IGNORECASE,
 )
 # 大陆手机号，前后不能再跟数字。
 _PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 # 加群/群号后面的数字。
 _GROUP_RE = re.compile(r"(?:加群|进群|群号|群)[:：\s]*[1-9]\d{4,9}")
-# wxid_ 或「微信/wx」后面的账号。
-_WECHAT_RE = re.compile(
-    r"(wxid_[a-zA-Z0-9]+)|"
-    r"(?:微信号?|(?<![a-zA-Z])wx(?![a-zA-Z])|v信|威信)[:：\s]*[a-zA-Z][a-zA-Z0-9_-]{5,19}",
-    re.I,
+# 口令：加微信/微信/薇信/加v/wx/vx 等后面的账号，以及 wxid_。
+_WECHAT_HINT_RE = re.compile(
+    r"(wxid_[a-zA-Z0-9_-]+)|"
+    r"(?:加微信|微信号?|薇信|威信|v信|加[vV]|"
+    r"(?<![a-zA-Z])(?:wx|vx)(?![a-zA-Z]))"
+    r"[:：\s]*[a-zA-Z][a-zA-Z0-9_-]{5,19}",
+    re.IGNORECASE,
+)
+# 无口令：字母开头、6～20 位字母数字下划线减号，再筛纯英文和网址。
+_WECHAT_BARE_RE = re.compile(
+    r"(?<![a-zA-Z0-9_-])[a-zA-Z][a-zA-Z0-9_-]{5,19}(?![a-zA-Z0-9_-])"
 )
 
 # 5~11 位数字，后面再筛掉手机号和日期。
@@ -79,9 +85,7 @@ def flag_on(config: object, key: str) -> bool:
         return False
     value = getter(key)
     # 只认明确打开，缺字段不继承成开
-    if value is True or value == 1 or value == "true":
-        return True
-    return False
+    return value is True or value == 1 or value == "true"
 
 
 def any_pattern_on(config: object) -> bool:
@@ -104,8 +108,8 @@ def find_pattern_trigger(text: str, config: object) -> str:
     # 11 位手机号
     if flag_on(config, FORBIDDEN_CFG_TRIGGER_PHONE) and _PHONE_RE.search(text):
         return FORBIDDEN_PATTERN_PHONE
-    # 微信号或 wxid_
-    if flag_on(config, FORBIDDEN_CFG_TRIGGER_WECHAT) and _WECHAT_RE.search(text):
+    # 微信号：口令加账号，或无口令字母数字混合 6～20 位
+    if flag_on(config, FORBIDDEN_CFG_TRIGGER_WECHAT) and _has_wechat(text):
         return FORBIDDEN_PATTERN_WECHAT
     # 加群/群号，避免和裸 QQ 号抢
     if flag_on(config, FORBIDDEN_CFG_TRIGGER_GROUP) and _GROUP_RE.search(text):
@@ -127,4 +131,35 @@ def _has_qq(text: str) -> bool:
         if len(token) == 8 and token.startswith("20"):
             continue
         return True
+    return False
+
+
+def _has_wechat(text: str) -> bool:
+    """有没有推荐档微信号。口令优先，否则只认字母数字都有的裸账号。"""
+    # 带口令或 wxid_ 已经够明确
+    if _WECHAT_HINT_RE.search(text):
+        return True
+    url_spans = [m.span() for m in _URL_RE.finditer(text)]
+    for match in _WECHAT_BARE_RE.finditer(text):
+        token = match.group(0)
+        # 没有数字就是纯英文或下划线词，不送模型
+        if not any(ch.isdigit() for ch in token):
+            continue
+        start, end = match.span()
+        # 落在网址里的片段不当微信号
+        if _inside_url(start, end, url_spans):
+            continue
+        # 整段是手机号则留给手机开关
+        if _PHONE_RE.fullmatch(token):
+            continue
+        return True
+    return False
+
+
+def _inside_url(start: int, end: int, url_spans: list) -> bool:
+    """账号片段是否和已检出的网址重叠。"""
+    for left, right in url_spans:
+        # 重叠则当成网址的一部分
+        if start < right and end > left:
+            return True
     return False
