@@ -28,6 +28,8 @@ class PagesNavTest(unittest.TestCase):
         nav = (SRC / "nav.js").read_text()
         self.assertNotIn("window.top", nav)
         self.assertNotIn("#/plugin-page/", nav)
+        self.assertIn("forbidden-triggers", nav)
         app = (SRC / "App.jsx").read_text()
         self.assertIn('type="card"', app)
         self.assertIn("onChange={setActive}", app)
+        self.assertIn("ForbiddenTriggersView", app)

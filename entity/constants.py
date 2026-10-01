@@ -64,6 +64,8 @@ FORBIDDEN_ITEM_MAX_LEN = 500
 
 # 查询时一次最多返回多少条，超出只报告剩余数量，避免刷屏。
 FORBIDDEN_LIST_LIMIT = 30
+# WebUI 触发词表默认每页条数。
+FORBIDDEN_TRIGGER_PAGE_SIZE = 20
 
 # 违禁词禁言秒数没填时的默认值。WebUI 可改。
 DEFAULT_FORBIDDEN_MUTE_SECONDS = 60

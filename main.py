@@ -53,6 +53,11 @@ from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_admin import delete_rule, list_rules, write_rule
 from .business.keyword_page import list_keywords, remove_keyword, save_keyword
+from .business.forbidden_trigger_page import (
+    list_triggers,
+    remove_trigger,
+    save_trigger,
+)
 from .business.keyword_reply import pick_reply
 from .business.settings_page import get_settings, save_settings
 from .business.verify_action import (
@@ -108,6 +113,7 @@ class RulesPlugin(Star):
         self._start_remind_loop()
         self._register_forbidden_page()
         self._register_keyword_pages()
+        self._register_trigger_pages()
         self._register_log_pages()
         self._register_settings_pages()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
@@ -282,6 +288,69 @@ class RulesPlugin(Star):
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
         ok, message = await remove_keyword(self.keywords, payload)
+        # 没这条或字段空用 400
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    def _register_trigger_pages(self) -> None:
+        """注册违禁触发词表接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/forbidden-trigger/list",
+            self.page_trigger_list,
+            ["POST"],
+            "违禁触发词列表",
+        )
+        register(
+            f"/{PLUGIN_NAME}/forbidden-trigger/save",
+            self.page_trigger_save,
+            ["POST"],
+            "保存违禁触发词",
+        )
+        register(
+            f"/{PLUGIN_NAME}/forbidden-trigger/delete",
+            self.page_trigger_delete,
+            ["POST"],
+            "删除违禁触发词",
+        )
+
+    async def page_trigger_list(self):
+        """WebUI：分页列出全局触发词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出筛选条件
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        return json_response(list_triggers(self.forbidden, payload))
+
+    async def page_trigger_save(self):
+        """WebUI：新增或修改一条全局触发词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出要保存的字段
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await save_trigger(self.forbidden, payload)
+        # 校验失败用 400，页面直接展示原因
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    async def page_trigger_delete(self):
+        """WebUI：删除一条全局触发词。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出主键
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await remove_trigger(self.forbidden, payload)
         # 没这条或字段空用 400
         if not ok:
             return error_response(message, status_code=400)

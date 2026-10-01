@@ -3,6 +3,7 @@ import { ConfigProvider, Tabs, theme } from "antd";
 import { PAGE_TABS } from "./nav.js";
 import { SettingsView } from "./settings-view.jsx";
 import { KeywordsView } from "./keywords-view.jsx";
+import { ForbiddenTriggersView } from "./forbidden-triggers-view.jsx";
 import { ForbiddenTestView } from "./forbidden-test-view.jsx";
 import { ForbiddenLogsView } from "./forbidden-logs-view.jsx";
 
@@ -32,6 +33,8 @@ export default function App() {
       children = <SettingsView />;
     } else if (tab.key === "keywords") {
       children = <KeywordsView />;
+    } else if (tab.key === "forbidden-triggers") {
+      children = <ForbiddenTriggersView />;
     } else if (tab.key === "forbidden-test") {
       children = <ForbiddenTestView />;
     } else if (tab.key === "forbidden-logs") {
