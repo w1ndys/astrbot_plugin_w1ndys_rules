@@ -18,8 +18,11 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_judge import (
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_SAMPLES,
+    FORBIDDEN_CFG_TRIGGER_URL,
     FORBIDDEN_KIND_TRIGGER,
+    FORBIDDEN_PATTERN_URL,
 )
+
 
 
 class FakeForbiddenStore:
@@ -108,6 +111,18 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertEqual(plan.status, "error")
         self.assertEqual(plan.trigger, "广告")
         self.assertIn("违禁", plan.message)
+
+    def test_url_switch_ready_without_words(self) -> None:
+        """开了网址开关，没有词表也能当触发词送模型。"""
+        config = {
+            FORBIDDEN_CFG_GUIDELINE: "广告引流算违禁。",
+            FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
+            FORBIDDEN_CFG_TRIGGER_URL: True,
+        }
+        plan = plan_forbidden_test(config, FakeForbiddenStore(), "看 https://a.com")
+        self.assertEqual(plan.status, "ready")
+        self.assertEqual(plan.trigger, FORBIDDEN_PATTERN_URL)
+
 
     def test_payload_hides_prompt_and_webhook(self) -> None:
         plan = plan_forbidden_test(self.config, self.store, "这里有广告")

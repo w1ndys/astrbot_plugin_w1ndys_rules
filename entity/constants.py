@@ -83,6 +83,19 @@ FORBIDDEN_CFG_SAMPLES = "forbidden_samples"
 FORBIDDEN_CFG_MUTE_SECONDS = "forbidden_mute_seconds"
 FORBIDDEN_CFG_REMIND_TEXT = "forbidden_remind_text"
 FORBIDDEN_CFG_FEISHU_WEBHOOK = "forbidden_feishu_webhook"
+# WebUI：文本路额外触发。开了就把这类内容当命中触发词，再送模型。默认全关。
+FORBIDDEN_CFG_TRIGGER_URL = "forbidden_trigger_url"
+FORBIDDEN_CFG_TRIGGER_GROUP = "forbidden_trigger_group"
+FORBIDDEN_CFG_TRIGGER_QQ = "forbidden_trigger_qq"
+FORBIDDEN_CFG_TRIGGER_PHONE = "forbidden_trigger_phone"
+FORBIDDEN_CFG_TRIGGER_WECHAT = "forbidden_trigger_wechat"
+# 规则触发写进日志/飞书的名字，当触发词用。
+FORBIDDEN_PATTERN_URL = "网址"
+FORBIDDEN_PATTERN_GROUP = "群号"
+FORBIDDEN_PATTERN_QQ = "QQ号"
+FORBIDDEN_PATTERN_PHONE = "手机号"
+FORBIDDEN_PATTERN_WECHAT = "微信号"
+
 # WebUI：要拦截群名片的群号名单，按条添加。没写的群不拦。
 FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS = "forbidden_block_group_card_groups"
 # 飞书和处置日志里的触发名，不是用户正文，避免把卡片 JSON 里的签名带出去。

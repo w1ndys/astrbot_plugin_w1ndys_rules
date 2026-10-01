@@ -8,7 +8,8 @@ from ..entity.constants import (
     FORBIDDEN_GLOBAL_SCOPE,
     FORBIDDEN_KIND_TRIGGER,
 )
-from .forbidden_match import find_trigger
+from .forbidden_match import any_pattern_on, find_pattern_trigger, find_trigger
+
 
 
 class ForbiddenTestPlan:
@@ -79,13 +80,17 @@ def plan_forbidden_test(
     if not payload:
         return ForbiddenTestPlan("error", "请填写要测的文本。")
     words = store.list_contents(FORBIDDEN_GLOBAL_SCOPE, FORBIDDEN_KIND_TRIGGER)
-    # 全局没有触发词就永远不会进模型。
-    if not words:
-        return ForbiddenTestPlan("error", "请先添加违禁触发词。")
     trigger = find_trigger(payload, words)
-    # 没命中触发词，按正式路径一样不送模型
+    # 词表没命中，再看网址/群号/QQ/手机/微信开关
+    if not trigger:
+        trigger = find_pattern_trigger(payload, config)
+    # 词表空、规则也关，永远不会进模型
+    if not trigger and not words and not any_pattern_on(config):
+        return ForbiddenTestPlan("error", "请先添加违禁触发词。")
+    # 没命中触发词，也没命中规则
     if not trigger:
         return ForbiddenTestPlan("skip", "未命中触发词，不会送模型。")
+
     samples = config_text(config, FORBIDDEN_CFG_SAMPLES)
     guideline = config_text(config, FORBIDDEN_CFG_GUIDELINE)
     # 判断准则和样本都为空时，模型没有判断依据。
