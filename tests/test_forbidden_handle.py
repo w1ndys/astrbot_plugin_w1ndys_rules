@@ -203,10 +203,11 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(reply, "请不要发广告。")
         actions = [item[0] for item in event.bot.api.calls]
-        self.assertEqual(actions, ["delete_msg", "set_group_ban"])
+        self.assertEqual(actions, ["delete_msg", "get_group_msg_history", "set_group_ban"])
         self.assertEqual(event.bot.api.calls[0][1]["message_id"], 123)
-        self.assertEqual(event.bot.api.calls[1][1]["duration"], 60)
-        self.assertEqual(event.bot.api.calls[1][1]["user_id"], 10001)
+        self.assertEqual(event.bot.api.calls[2][1]["duration"], 60)
+        self.assertEqual(event.bot.api.calls[2][1]["user_id"], 10001)
+
         self.assertEqual(len(posted), 1)
         self.assertEqual(posted[0][0], "https://example.com/hook")
         self.assertIn("广告", posted[0][1]["content"]["text"])
@@ -237,7 +238,8 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(reply, "")
         actions = [item[0] for item in event.bot.api.calls]
-        self.assertEqual(actions, ["delete_msg"])
+        self.assertEqual(actions, ["delete_msg", "get_group_msg_history"])
+
         self.assertEqual(posted, [])
 
     async def test_skip_mute_self(self) -> None:
@@ -307,7 +309,8 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(reply, "请不要发广告。")
         actions = [item[0] for item in event.bot.api.calls]
-        self.assertEqual(actions, ["delete_msg", "set_group_ban"])
+        self.assertEqual(actions, ["delete_msg", "get_group_msg_history", "set_group_ban"])
+
 
     async def test_never_seen_still_detects(self) -> None:
         event = FakeEvent(role="member")
@@ -322,7 +325,8 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(reply, "请不要发广告。")
         actions = [item[0] for item in event.bot.api.calls]
-        self.assertEqual(actions, ["delete_msg", "set_group_ban"])
+        self.assertEqual(actions, ["delete_msg", "get_group_msg_history", "set_group_ban"])
+
 
     async def test_yes_writes_log(self) -> None:
         """模型说「是」才落日志，text 用 message_str。"""

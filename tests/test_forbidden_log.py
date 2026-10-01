@@ -188,4 +188,5 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
             reason_code=FORBIDDEN_REASON_MODEL,
         )
         actions = [name for name, _kwargs in event.bot.api.calls]
-        self.assertEqual(actions, ["delete_msg"])
+        self.assertEqual(actions, ["delete_msg", "get_group_msg_history"])
+

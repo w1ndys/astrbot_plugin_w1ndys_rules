@@ -96,6 +96,9 @@ FORBIDDEN_REASON_IMAGE_MODEL = "image_model"
 QRCODE_HIT = "图片含二维码"
 # 飞书和日志里的图片转写触发名。不是用户正文。
 IMAGE_TRANSCRIPT_HIT = "图片转写"
+# 违禁命中后拉群历史的条数。只撤回这 30 条里该用户的消息。
+FORBIDDEN_RECALL_HISTORY_COUNT = 30
+
 
 # WebUI 日志表默认每页条数。
 FORBIDDEN_LOG_PAGE_SIZE = 20

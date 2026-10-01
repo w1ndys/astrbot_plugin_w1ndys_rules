@@ -5,15 +5,25 @@ import asyncio
 import json
 import urllib.request
 
+try:
+    from astrbot.api import logger as _log
+except ImportError:
+    # 单测不装 AstrBot，落到标准 logging
+    import logging
+
+    _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
+
 from ..entity.constants import (
     DEFAULT_FORBIDDEN_MUTE_SECONDS,
     FORBIDDEN_CFG_FEISHU_WEBHOOK,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
+    FORBIDDEN_RECALL_HISTORY_COUNT,
     MAX_FORBIDDEN_MUTE_SECONDS,
 )
 from .forbidden_judge import config_text
 from .forbidden_log import save_hit_log, take_payload
+
 
 
 def mute_seconds(config: object) -> int:
@@ -108,24 +118,32 @@ def message_id_of(event: object) -> object:
     return raw
 
 
-async def call_action(event: object, action: str, **kwargs: object) -> bool:
-    """调 OneBot 一个动作。失败只返回 False，不往上抛。"""
+async def call_result(event: object, action: str, **kwargs: object) -> object:
+    """调 OneBot 并回传结果。失败回 None。"""
     bot = getattr(event, "bot", None)
     # 当前事件不是 OneBot 就做不了撤回禁言
     if bot is None:
-        return False
+        return None
     api = getattr(bot, "api", None)
     # 有 bot 但没有 api 同样不能调
     if api is None:
-        return False
+        return None
     chat = getattr(api, "call_action", None)
     # 接口名不对就当失败
     if not callable(chat):
-        return False
+        return None
     try:
-        await asyncio.wait_for(chat(action, **kwargs), 15)
+        return await asyncio.wait_for(chat(action, **kwargs), 15)
     except Exception:  # noqa: BLE001 - OneBot 适配器异常类型不固定，失败时继续后续提醒
         # 协议失败不打断后面的提醒和飞书
+        return None
+
+
+async def call_action(event: object, action: str, **kwargs: object) -> bool:
+    """调 OneBot 一个动作。失败只返回 False，不往上抛。"""
+    result = await call_result(event, action, **kwargs)
+    # 超时或适配器抛错时 call_result 给 None
+    if result is None:
         return False
     return True
 
@@ -136,11 +154,124 @@ async def recall_message(event: object) -> None:
     # 没有消息 ID 协议端撤不了
     if mid is None:
         return
-    try:
-        parsed = int(mid)
-    except (TypeError, ValueError):
+    parsed = _int_id(mid)
+    # ID 不是数字协议端不认
+    if parsed is None:
         return
     await call_action(event, "delete_msg", message_id=parsed)
+
+
+def history_messages(raw: object) -> list:
+    """从 get_group_msg_history 回报取出消息列表。"""
+    # 有的实现直接回列表
+    if isinstance(raw, list):
+        return raw
+    getter = getattr(raw, "get", None)
+    # 不是对象就没有消息
+    if not callable(getter):
+        return []
+    msgs = getter("messages")
+    # 常见是 {messages: [...]}
+    if isinstance(msgs, list):
+        return msgs
+    data = getter("data")
+    # 有的包在 data 里
+    if isinstance(data, list):
+        return data
+    # data.messages
+    if isinstance(data, dict):
+        inner = data.get("messages")
+        # 标准 OneBot 外包一层
+        if isinstance(inner, list):
+            return inner
+    return []
+
+
+def msg_user_id(msg: object) -> str:
+    """历史消息里的发送人 QQ 号。"""
+    # 不是对象就对不上人
+    if not isinstance(msg, dict):
+        return ""
+    info = msg.get("sender")
+    # 有的实现把发送人摊在外层
+    if not isinstance(info, dict):
+        info = {}
+    return str(info.get("user_id") or msg.get("user_id") or "")
+
+
+def _int_id(raw: object):
+    """消息 ID 转 int。不是数字就当没有。"""
+    # 空值撤不了
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def user_history_ids(raw: object, user_id: str) -> list:
+    """最近一页里这个人的消息 ID，去重且保持原顺序。"""
+    ids = []
+    seen = set()
+    for msg in history_messages(raw):
+        # 不是这个违禁用户的不撤
+        if msg_user_id(msg) != user_id:
+            continue
+        mid = _int_id(msg.get("message_id") if isinstance(msg, dict) else None)
+        # 没有数字 ID 协议端撤不了
+        if mid is None:
+            continue
+        # 同一条不要删两次
+        if mid in seen:
+            continue
+        seen.add(mid)
+        ids.append(mid)
+    return ids
+
+
+async def recall_user_recent(event: object, group_id: str) -> None:
+    """拉群最近 30 条，撤回其中这个违禁用户的消息。当前条已撤过则跳过。"""
+    user_id = sender_id_of(event)
+    # 拿不到人就对不上历史
+    if not user_id:
+        return
+    # 机器人自己的消息不要撤
+    if user_id == self_id_of(event):
+        return
+    try:
+        gid = int(group_id)
+    except (TypeError, ValueError):
+        return
+    raw = await call_result(
+        event,
+        "get_group_msg_history",
+        group_id=gid,
+        message_seq=0,
+        count=FORBIDDEN_RECALL_HISTORY_COUNT,
+    )
+    # 协议失败当这页没有历史，当前条已经撤过
+    if raw is None:
+        _log.info("[rules] forbidden history skip group=%s reason=no_history", group_id)
+        return
+    current = _int_id(message_id_of(event))
+    ids = user_history_ids(raw, user_id)
+    extra = 0
+    for mid in ids:
+        # 当前违禁消息刚撤过，不要再删一次
+        if current is not None and mid == current:
+            continue
+        ok = await call_action(event, "delete_msg", message_id=mid)
+        # 记成功数，失败的继续下一条
+        if ok:
+            extra += 1
+    _log.info(
+        "[rules] forbidden history recall group=%s user=%s extra=%s scanned=%s",
+        group_id,
+        user_id,
+        extra,
+        len(ids),
+    )
 
 
 async def mute_member(event: object, group_id: str, seconds: int) -> None:
@@ -203,12 +334,14 @@ async def apply_hit_actions(
     log_store=None,
     reason_code: str = "",
 ) -> str:
-    """命中后：先采原文，再撤回、禁言、飞书、写日志。返回群提醒文案。"""
+    """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。"""
     payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
+    await recall_user_recent(event, group_id)
     await mute_member(event, group_id, mute_seconds(config))
     await notify_feishu(config, group_id, trigger, text, event, poster)
     await save_hit_log(
         log_store, group_id, sender_id_of(event), reason_code, trigger, payload
     )
     return remind_text(config)
+
