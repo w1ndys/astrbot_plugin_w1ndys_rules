@@ -2,6 +2,7 @@
 # 单独线路，不看触发词，不送模型。命中后走和违禁词一样的撤回、禁言、飞书。
 
 import json
+import logging
 
 from ..entity.constants import (
     FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
@@ -12,6 +13,7 @@ from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .qq_role import is_qq_group_staff
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 async def handle_group_card(
     config: object,
@@ -33,7 +35,9 @@ async def handle_group_card(
         return False, ""
     # 群主管理员发测试卡片不处置，避免自己被禁言
     if is_qq_group_staff(event):
+        _log.info("[rules] group_card skip group=%s reason=staff", group_id)
         return False, ""
+    _log.info("[rules] group_card hit group=%s", group_id)
     remind = await apply_hit_actions(
         event,
         config,

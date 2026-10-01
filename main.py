@@ -41,7 +41,7 @@ from .business.forbidden_admin import (
     update_item,
 )
 from .business.forbidden_handle import handle_forbidden_message
-from .business.forbidden_image import plan_image_test
+from .business.forbidden_image import message_has_image, plan_image_test
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
@@ -459,6 +459,14 @@ class RulesPlugin(Star):
         if not group_id:
             return
         text = event.message_str or ""
+        # 纯图没有正文，单独记下，方便对照漏检
+        if message_has_image(event):
+            logger.info(
+                "[rules] group_msg image group=%s user=%s text_len=%s",
+                group_id,
+                _sender_id_of(event),
+                len(text),
+            )
         handled, reply = await handle_group_card(
             self.config, event, group_id, log_store=self.forbidden_logs
         )

@@ -1,11 +1,13 @@
 # 业务层：入群时要不要建 pending、验证说明怎么写。不发消息，不禁言，不碰 AstrBot。
 
+import logging
 import random
 
 from ..data.verify_store import VerifyStore
 from ..entity.constants import CFG_VERIFY_GROUPS, VERIFY_CODE_LEN, VERIFY_REMIND_MAX
 from .feature_enable import feature_on
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def new_code(store: VerifyStore, group_id: str) -> str:
     """生成本群当前未占用的 6 位数字码。"""
@@ -36,13 +38,17 @@ async def start_pending(
     """名单里且不是机器人自己，才写 pending 并返回验证说明；否则空串。"""
     # 空名单即关，没写过的群不建码
     if not feature_on(config, CFG_VERIFY_GROUPS, group_id):
+        _log.info("[rules] verify skip group=%s reason=not_enabled", group_id)
         return ""
     # 没有 QQ 号对不上人，不能建 pending
     if not user_id:
+        _log.info("[rules] verify skip group=%s reason=no_user", group_id)
         return ""
     # 机器人自己入群不验证
     if self_id and user_id == self_id:
+        _log.info("[rules] verify skip group=%s reason=self", group_id)
         return ""
     code = new_code(store, group_id)
     await store.put(group_id, user_id, code)
+    _log.info("[rules] verify start group=%s user=%s", group_id, user_id)
     return hint_text(code)

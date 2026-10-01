@@ -3,6 +3,8 @@
 # 本群独立配置为空串则关闭，优先于 WebUI 开启名单。
 # 没写过独立配置时，开启群用全局文案，全局没填用默认句。
 
+import logging
+
 from ..data.welcome_store import WelcomeStore
 from ..entity.constants import (
     CFG_WELCOME_GROUPS,
@@ -12,6 +14,7 @@ from ..entity.constants import (
 )
 from .feature_enable import feature_on
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def is_group_increase(event: object) -> bool:
     """当前事件是不是 OneBot 的群成员增加通知。"""
@@ -32,9 +35,11 @@ def pick_welcome(welcome: WelcomeStore, config: object, group_id: str) -> str:
     override = welcome.get_content(group_id)
     # 独立配置写成空：本群关闭，压过开启名单
     if override is not None and not override.strip():
+        _log.info("[rules] welcome skip group=%s reason=empty_override", group_id)
         return ""
     # 空名单即关，没写过独立配置的群保持安静
     if not feature_on(config, CFG_WELCOME_GROUPS, group_id):
+        _log.info("[rules] welcome skip group=%s reason=not_enabled", group_id)
         return ""
     # 有独立文案就用本群的，不再读全局
     if override is not None:

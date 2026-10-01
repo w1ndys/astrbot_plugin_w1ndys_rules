@@ -5,11 +5,13 @@
 # 也就是 operator_id。拿不到 operator_id 或自己邀请自己时不记，宁可不写也不造假边。
 # 不判断名单以外的事，不发消息，不碰 AstrBot。
 
+import logging
+
 from ..data.invite_store import InviteStore
 from ..entity.constants import CFG_INVITE_GROUPS
 from .feature_enable import feature_on
 
-
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 async def record_join(
     store: InviteStore,
     config: object,
@@ -40,6 +42,7 @@ async def record_join(
     if inviter == user_id:
         return False
     await store.record(group_id, user_id, inviter, _field(raw, "sub_type"))
+    _log.info("[rules] invite record group=%s user=%s inviter=%s", group_id, user_id, inviter)
     return True
 
 

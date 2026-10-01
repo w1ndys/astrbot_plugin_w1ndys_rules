@@ -1,9 +1,13 @@
 # 业务层：群员发了一条消息，要不要用关键词回复、回什么。
 # 不碰数据库（只问内存快照），不碰 AstrBot（只返回文本）。
 
+import logging
+
 from ..data.keyword_store import KeywordStore
 from ..entity.constants import CFG_KEYWORD_GROUPS
 from .feature_enable import feature_on
+
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 
 def pick_reply(
@@ -17,4 +21,8 @@ def pick_reply(
     if not feature_on(config, CFG_KEYWORD_GROUPS, group_id):
         return ""
     # 整条消息完全等于关键词才算命中，与旧机器人的行为保持一致
-    return keywords.find_reply(group_id, text)
+    reply = keywords.find_reply(group_id, text)
+    # 命中才记，避免每条群聊刷屏
+    if reply:
+        _log.info("[rules] keyword hit group=%s", group_id)
+    return reply

@@ -2,7 +2,7 @@
 # 不读协议 payload 的 ocr/text。不走触发词。测试页不处置。
 
 import inspect
-
+import logging
 from ..entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_SAMPLES,
@@ -21,8 +21,8 @@ from .forbidden_judge import (
 from .forbidden_ocr import ocr_text_from_b64
 from .forbidden_qr import qr_found_in_b64
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 _STICKER_TYPES = {"Face", "Mface"}
-
 
 def message_has_image(event: object) -> bool:
     """消息链里有没有图片或表情段。"""
@@ -76,7 +76,10 @@ async def handle_forbidden_images(
     # 纯文本不走这里
     if not comps:
         return False, ""
+    names = ",".join(type(comp).__name__ for comp in comps)
+    _log.info("[rules] image start group=%s comps=%s", group_id, names)
     if await _qr_hit(comps, decoder):
+        _log.info("[rules] image qr hit group=%s", group_id)
         remind = await apply_hit_actions(
             event,
             config,
@@ -89,14 +92,28 @@ async def handle_forbidden_images(
         )
         return True, remind
     text = await _transcript_of(event, comps, transcribe, ocr)
+    preview = text.replace("\n", " ")[:80]
+    _log.info(
+        "[rules] image ocr group=%s chars=%s preview=%s",
+        group_id,
+        len(text),
+        preview,
+    )
     plan = plan_image_test(config, text, False)
     # 空转写或没设定，不打模型
     if plan.status != "ready":
+        _log.info(
+            "[rules] image skip group=%s status=%s msg=%s",
+            group_id,
+            plan.status,
+            plan.message,
+        )
         return False, ""
     provider = await get_provider()
     verdict = await complete_yes_no(provider, plan.system, plan.user)
     # 只有整句「是」才处置
     if verdict != "yes":
+        _log.info("[rules] image verdict group=%s verdict=%s", group_id, verdict)
         return False, ""
     remind = await apply_hit_actions(
         event,
@@ -108,6 +125,7 @@ async def handle_forbidden_images(
         log_store,
         FORBIDDEN_REASON_IMAGE_MODEL,
     )
+    _log.info("[rules] image model hit group=%s", group_id)
     return True, remind
 
 
@@ -172,14 +190,24 @@ async def _transcript_of(event: object, comps: list, transcribe, ocr=None) -> st
     for comp in comps:
         # 贴纸不当广告图，不跑 OCR
         if skip_vision(comp):
+            _log.info(
+                "[rules] image ocr skip type=%s reason=sticker_or_gif",
+                type(comp).__name__,
+            )
             continue
         raw = await _comp_b64(comp)
         # 下图失败当这张没字
         if not raw:
+            _log.info("[rules] image ocr skip type=%s reason=no_bytes", type(comp).__name__)
             continue
         text = ocr_text_from_b64(raw, ocr)
         # 没认出字就看下一张
         if not text:
+            _log.info(
+                "[rules] image ocr empty type=%s b64=%s",
+                type(comp).__name__,
+                len(raw),
+            )
             continue
         parts.append(text)
     return "\n".join(parts)
@@ -190,12 +218,14 @@ async def _comp_b64(comp: object) -> str:
     convert = getattr(comp, "convert_to_base64", None)
     # 表情可能没有这个方法
     if not callable(convert):
+        _log.info("[rules] image b64 skip type=%s reason=no_convert", type(comp).__name__)
         return ""
     try:
         raw = convert()
         if inspect.isawaitable(raw):
             raw = await raw
     except Exception:  # noqa: BLE001 - 单张失败继续其它图
+        _log.info("[rules] image b64 fail type=%s", type(comp).__name__)
         return ""
     text = str(raw or "")
     if text.startswith("base64://"):

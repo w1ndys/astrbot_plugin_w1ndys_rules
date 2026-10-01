@@ -5,10 +5,13 @@
 #
 # 无权的人误发要静默：这条路径会看到所有群消息，回拒绝语会刷屏。
 
+import logging
+
 from ..data.welcome_store import WelcomeStore
 from ..entity.constants import CMD_WELCOME_SET, CMD_WELCOME_SHOW
 from .welcome_admin import can_edit_welcome, set_welcome, show_welcome
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 def _has_command_header(first: str, cmd: str) -> bool:
     """第一行是命令，或命令后面紧跟空格/Tab 再跟正文。"""
@@ -52,7 +55,9 @@ async def handle_admin_command(
         return False, ""
     # 欢迎语：无权误发静默，也不让这条再去撞关键词或进模型
     if not can_edit_welcome(event):
+        _log.info("[rules] admin skip group=%s action=%s reason=no_perm", group_id, action)
         return True, ""
+    _log.info("[rules] admin cmd group=%s action=%s", group_id, action)
     # 查看本群独立配置
     if action == "welcome_show":
         return True, show_welcome(welcome, event, group_id)

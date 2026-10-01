@@ -1,9 +1,13 @@
 # 业务层：待验证的人私聊交码。对了撤群里的提示、解禁、私聊告知通过；错了只回私聊一句。
 # 群消息不再走入群验证交码。
 
+import logging
+
 from ..data.verify_store import VerifyStore
 from .verify_action import recall_message_id, unmute_user
 from .verify_check import code_in_text
+
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 # 交码成功、失败都只回私聊。不提踢人。
 PASS_REPLY = "已通过人机验证。"
@@ -42,6 +46,12 @@ async def handle_verify_private(
     # 不是待验证私聊，后面的流程继续
     if not action:
         return False, ""
+    _log.info(
+        "[rules] verify private user=%s action=%s group=%s",
+        user_id,
+        action,
+        group_id,
+    )
     # 对不上任何一群的码，只在私聊说不对
     if action == "fail":
         return True, FAIL_REPLY

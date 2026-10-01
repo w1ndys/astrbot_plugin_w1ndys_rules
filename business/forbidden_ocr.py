@@ -2,7 +2,9 @@
 # 测试可传入 reader。
 
 import base64
+import logging
 
+_log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 _engine = None
 _engine_failed = False
 
@@ -51,13 +53,14 @@ def _rapid_ocr(data: bytes) -> str:
     engine = _load_engine()
     # 没装就不转写，后面不送模型
     if engine is None:
+        _log.info("[rules] ocr skip reason=no_engine")
         return ""
     try:
         result = engine(data)
     except Exception:  # noqa: BLE001 - 推理失败当没字
+        _log.info("[rules] ocr fail bytes=%s", len(data))
         return ""
     return _join_texts(result)
-
 
 def _load_engine():
     """懒加载 RapidOCR。导入失败只试一次。"""
@@ -72,11 +75,13 @@ def _load_engine():
     # 两个包名都没有
     if builder is None:
         _engine_failed = True
+        _log.warning("[rules] ocr engine missing: install rapidocr")
         return None
     try:
         _engine = builder()
     except Exception:  # noqa: BLE001 - 权重加载失败当没装
         _engine_failed = True
+        _log.warning("[rules] ocr engine init failed")
         return None
     return _engine
 
