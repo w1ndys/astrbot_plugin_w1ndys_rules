@@ -97,7 +97,7 @@ def plan_forbidden_test(
     if not samples.strip() and not guideline.strip():
         return ForbiddenTestPlan(
             "error",
-            "请先填写 WebUI 判断准则或违禁样本。",
+            "请先填写控制台判断准则或违禁样本。",
             trigger,
         )
     return ForbiddenTestPlan(

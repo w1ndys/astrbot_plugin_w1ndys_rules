@@ -56,7 +56,7 @@ def plan_image_test(
     # 和文本路一样，没准则没样本就测不了
     if not samples.strip() and not guideline.strip():
         return ForbiddenTestPlan(
-            "error", "请先填写 WebUI 判断准则或违禁样本。"
+            "error", "请先填写控制台判断准则或违禁样本。"
         )
     return ForbiddenTestPlan(
         "ready",
