@@ -1,5 +1,7 @@
-// 页面层：非密钥全局配置。按群号一行勾选功能，保存仍 POST 各功能名单。
-// 飞书 webhook 不展示、不提交。
+// 页面层：全局配置。按群号一行勾选功能，保存仍 POST 各功能名单。
+
+// 飞书 webhook 在本页用密码框改。
+
 
 import { useEffect, useState } from "react";
 import { Button, Card, Checkbox, Form, Input, InputNumber, Space, Table, message } from "antd";
@@ -180,7 +182,8 @@ function GroupTable(props) {
   return (
     <>
       <p className="hint">
-        按群号一行勾选要开的功能，保存写成各功能名单。没出现的群就是全关。飞书 webhook 只在 AstrBot 官方插件配置页改。
+        按群号一行勾选要开的功能，保存写成各功能名单。没出现的群就是全关。飞书 webhook 也在本页改。
+
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
@@ -219,6 +222,21 @@ function ExtraFields(props) {
       <Form.Item name="forbidden_samples" label="违禁样本">
         <Input.TextArea rows={6} />
       </Form.Item>
+      <Form.Item name="forbidden_trigger_url" label="网址当触发词" valuePropName="checked">
+        <Checkbox>消息里出现网址就送模型</Checkbox>
+      </Form.Item>
+      <Form.Item name="forbidden_trigger_group" label="群号当触发词" valuePropName="checked">
+        <Checkbox>消息里出现加群/群号就送模型</Checkbox>
+      </Form.Item>
+      <Form.Item name="forbidden_trigger_qq" label="QQ 号当触发词" valuePropName="checked">
+        <Checkbox>消息里出现 QQ 号就送模型</Checkbox>
+      </Form.Item>
+      <Form.Item name="forbidden_trigger_phone" label="手机号当触发词" valuePropName="checked">
+        <Checkbox>消息里出现手机号就送模型</Checkbox>
+      </Form.Item>
+      <Form.Item name="forbidden_trigger_wechat" label="微信号当触发词" valuePropName="checked">
+        <Checkbox>消息里出现微信号就送模型</Checkbox>
+      </Form.Item>
       <Form.Item name="forbidden_mute_seconds" label="禁言秒数">
         <InputNumber min={0} style={{ width: "100%" }} />
       </Form.Item>
@@ -228,6 +246,12 @@ function ExtraFields(props) {
       <Form.Item name="verify_mute_seconds" label="入群验证禁言秒数">
         <InputNumber min={0} style={{ width: "100%" }} />
       </Form.Item>
+      <Form.Item name="forbidden_feishu_webhook" label="飞书 webhook">
+        <Input.Password />
+      </Form.Item>
+
+
+
       <Button type="primary" onClick={props.onSave}>
         保存
       </Button>

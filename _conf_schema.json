@@ -3,6 +3,7 @@
     "description": "开启关键词回复的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "要开启关键词回复的群号，按条添加。空名单则都不开。",
     "items": {
       "type": "string"
@@ -12,6 +13,7 @@
     "description": "开启违禁词的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "要开启违禁词审核的群号，按条添加。空名单则都不开。群主和管理员不拦。",
     "items": {
       "type": "string"
@@ -21,6 +23,7 @@
     "description": "开启欢迎语的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "入群要发欢迎语的群号，按条添加。空名单则都不发。本群独立配置写成空则仍关闭。",
     "items": {
       "type": "string"
@@ -30,12 +33,14 @@
     "description": "入群欢迎语文案（全局默认）",
     "type": "text",
     "default": "",
+    "invisible": true,
     "hint": "本群没单独设置时用这一句。留空则发「欢迎入群~」。群主/管理员可在群里用「欢迎语 设置」覆盖；写成空则关闭该群欢迎，优先于开启名单。"
   },
   "verify_groups": {
     "description": "开启入群验证的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "入群要做人机验证的群号，按条添加。空名单则都不验证。",
     "items": {
       "type": "string"
@@ -45,6 +50,7 @@
     "description": "开启邀请树的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "入群要记邀请关系的群号，按条添加。空名单则都不记。",
     "items": {
       "type": "string"
@@ -54,24 +60,28 @@
     "description": "违禁长什么样",
     "type": "string",
     "default": "",
+    "invisible": true,
     "hint": "用一段话说明什么样的消息算违禁、什么样的不算。大模型按这份设定判断。"
   },
   "forbidden_samples": {
     "description": "违禁样本",
     "type": "text",
     "default": "",
+    "invisible": true,
     "hint": "给模型看的判断样本，可换行。建议每行一条，违禁写「…… -> 是」，正常聊天写「…… -> 否」。"
   },
   "forbidden_mute_seconds": {
     "description": "禁言秒数",
     "type": "int",
     "default": 60,
+    "invisible": true,
     "hint": "判定违禁后禁言多久。没填时按 60 秒。"
   },
   "forbidden_remind_text": {
     "description": "提醒文案",
     "type": "string",
     "default": "",
+    "invisible": true,
     "hint": "判定违禁后发到群里的提醒。留空则暂时不发群内提醒。"
   },
   "forbidden_feishu_webhook": {
@@ -79,12 +89,49 @@
     "type": "string",
     "default": "",
     "secret": true,
-    "hint": "飞书自定义机器人 webhook，只填在本机 WebUI，不要写进代码仓。留空则发不出飞书通知。"
+    "invisible": true,
+    "hint": "飞书自定义机器人 webhook。只在插件 Pages 全局配置改。留空则发不出飞书通知。"
+  },
+  "forbidden_trigger_url": {
+    "description": "网址当触发词",
+    "type": "bool",
+    "default": false,
+    "invisible": true,
+    "hint": "开了之后，消息里出现网址就当命中触发词，再送模型判断。默认关。"
+  },
+  "forbidden_trigger_group": {
+    "description": "群号当触发词",
+    "type": "bool",
+    "default": false,
+    "invisible": true,
+    "hint": "开了之后，消息里出现加群/群号就当命中触发词，再送模型判断。默认关。"
+  },
+  "forbidden_trigger_qq": {
+    "description": "QQ 号当触发词",
+    "type": "bool",
+    "default": false,
+    "invisible": true,
+    "hint": "开了之后，消息里出现 QQ 号就当命中触发词，再送模型判断。默认关。11 位手机号和 8 位日期不当 QQ 号。"
+  },
+  "forbidden_trigger_phone": {
+    "description": "手机号当触发词",
+    "type": "bool",
+    "default": false,
+    "invisible": true,
+    "hint": "开了之后，消息里出现大陆 11 位手机号就当命中触发词，再送模型判断。默认关。"
+  },
+  "forbidden_trigger_wechat": {
+    "description": "微信号当触发词",
+    "type": "bool",
+    "default": false,
+    "invisible": true,
+    "hint": "开了之后，消息里出现微信号或 wxid_ 就当命中触发词，再送模型判断。默认关。"
   },
   "forbidden_block_group_card_groups": {
     "description": "拦截群名片的群",
     "type": "list",
     "default": [],
+    "invisible": true,
     "hint": "要拦截 QQ 群名片的群号，按条添加。名单里的群发群名片直接当违规：撤回、禁言、提醒、飞书。不走触发词和模型。空名单则都不拦。群主和管理员不拦。",
     "items": {
       "type": "string"
@@ -94,6 +141,7 @@
     "description": "入群验证禁言秒数",
     "type": "int",
     "default": 2592000,
+    "invisible": true,
     "hint": "待验证的人发错码时禁言多久。0 表示不禁。没填时按 2592000 秒（30 天）。超过 QQ 30 天会夹住。"
   }
 }

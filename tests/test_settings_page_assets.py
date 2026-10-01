@@ -9,17 +9,16 @@ PAGE = ROOT / "pages" / "console"
 
 
 class SettingsPageAssetsTest(unittest.TestCase):
-    """验证配置页不展示密钥。"""
+    """验证配置页在 Pages 改，官方 schema 全部隐藏。"""
 
     def test_app_script_is_classic_defer(self) -> None:
         html = (PAGE / "index.html").read_text()
         self.assertIn('script defer src="./assets/index.js"', html)
 
-    def test_no_webhook_field(self) -> None:
-        for path in SRC.glob("*"):
-            if path.suffix in {".js", ".jsx"}:
-                js = path.read_text()
-                self.assertNotIn("forbidden_feishu_webhook", js, path.name)
+    def test_webhook_field_on_settings_page(self) -> None:
+        js = (SRC / "settings-view.jsx").read_text()
+        self.assertIn("forbidden_feishu_webhook", js)
+        self.assertIn("Input.Password", js)
 
     def test_settings_view_groups_by_group(self) -> None:
         # 配置页按群号勾选，不再按功能用 tags 填群号。

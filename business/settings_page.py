@@ -1,5 +1,6 @@
-# 业务层：插件 Pages 全局配置。只读写非密钥 schema 字段。
-# 飞书 webhook 不读不写，只在官方配置页改。
+# 业务层：插件 Pages 全局配置。读写 schema 字段，含飞书 webhook。
+# 官方插件配置页字段全部 invisible，只在 Pages 改。
+
 
 from ..entity.constants import (
     CFG_FORBIDDEN_GROUPS,
@@ -14,6 +15,11 @@ from ..entity.constants import (
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
     FORBIDDEN_CFG_SAMPLES,
+    FORBIDDEN_CFG_TRIGGER_GROUP,
+    FORBIDDEN_CFG_TRIGGER_PHONE,
+    FORBIDDEN_CFG_TRIGGER_QQ,
+    FORBIDDEN_CFG_TRIGGER_URL,
+    FORBIDDEN_CFG_TRIGGER_WECHAT,
     VERIFY_CFG_MUTE_SECONDS,
 )
 
@@ -30,15 +36,26 @@ _TEXT_KEYS = (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_CFG_REMIND_TEXT,
+    FORBIDDEN_CFG_FEISHU_WEBHOOK,
 )
+
 _INT_KEYS = (
     FORBIDDEN_CFG_MUTE_SECONDS,
     VERIFY_CFG_MUTE_SECONDS,
 )
+_BOOL_KEYS = (
+    FORBIDDEN_CFG_TRIGGER_URL,
+    FORBIDDEN_CFG_TRIGGER_GROUP,
+    FORBIDDEN_CFG_TRIGGER_QQ,
+    FORBIDDEN_CFG_TRIGGER_PHONE,
+    FORBIDDEN_CFG_TRIGGER_WECHAT,
+)
+
 
 
 def get_settings(config: object) -> dict:
-    """读出当前非密钥字段。打开页必须是 schema 当前值。"""
+    """读出当前字段。打开页必须是 schema 当前值。"""
+
     result = {}
     for key in _LIST_KEYS:
         result[key] = _read_list(config, key)
@@ -46,11 +63,15 @@ def get_settings(config: object) -> dict:
         result[key] = _read_text(config, key)
     for key in _INT_KEYS:
         result[key] = _read_int(config, key)
+    for key in _BOOL_KEYS:
+        result[key] = _read_bool(config, key)
     return result
 
 
+
 def save_settings(config: object, payload: dict) -> tuple[bool, str]:
-    """写回非密钥字段。payload 里即使有 webhook 也丢掉。"""
+    """写回 schema 字段。"""
+
     # 没挂配置就写不回去
     if config is None:
         return False, "没有插件配置。"
@@ -68,7 +89,8 @@ def save_settings(config: object, payload: dict) -> tuple[bool, str]:
 
 
 def _parse_payload(payload: dict) -> tuple[dict, str]:
-    """只收下已知非密钥键。webhook 直接跳过。"""
+    """只收下已知键。"""
+
     parsed = {}
     for key in _LIST_KEYS:
         # 没带这个键就保持原值
@@ -87,7 +109,13 @@ def _parse_payload(payload: dict) -> tuple[dict, str]:
         if error:
             return {}, error
         parsed[key] = number
+    for key in _BOOL_KEYS:
+        # 没带这个开关就保持原值
+        if key not in payload:
+            continue
+        parsed[key] = _parse_bool(payload.get(key))
     return parsed, ""
+
 
 
 def _parse_list(value: object) -> list:
@@ -153,6 +181,20 @@ def _read_int(config: object, key: str) -> int:
         return 0
 
 
+def _read_bool(config: object, key: str) -> bool:
+    """读开关。缺字段或假值都关。"""
+    return _parse_bool(_config_get(config, key))
+
+
+def _parse_bool(value: object) -> bool:
+    """只认明确打开。"""
+    # 页面勾选、官方页 bool、偶发 1/true
+    if value is True or value == 1 or value == "true":
+        return True
+    return False
+
+
+
 def _config_get(config: object, key: str):
     """从配置取原值。"""
     if config is None:
@@ -164,8 +206,6 @@ def _config_get(config: object, key: str):
 
 
 def _config_set(config: object, key: str, value: object) -> None:
-    """写一个非密钥字段。"""
-    # 密钥字段绝对不走这里
-    if key == FORBIDDEN_CFG_FEISHU_WEBHOOK:
-        return
+    """写一个配置字段。"""
     config[key] = value
+
