@@ -174,6 +174,34 @@ class RulesPlugin(Star):
             return
         self._onebot = bot
 
+    def _ensure_onebot(self) -> object:
+        """已记下的优先；没有就从平台适配器取，给 Pages 拉取用。"""
+        bot = self._onebot
+        # 群消息已经记过，直接用
+        if bot is not None:
+            return bot
+        bot = self._onebot_from_context()
+        # 适配器也没有，Pages 只能报还没 bot
+        if bot is None:
+            return None
+        self._onebot = bot
+        return bot
+
+    def _onebot_from_context(self) -> object:
+        """从已加载的平台实例里找能调 OneBot 的客户端。"""
+        manager = getattr(self.context, "platform_manager", None)
+        insts = getattr(manager, "platform_insts", None)
+        # 旧 AstrBot 或还没挂平台
+        if not insts:
+            return None
+        for platform in insts:
+            client = _onebot_client_of(platform)
+            # 第一个能调的就用，多 QQ 适配器不挑
+            if client is not None:
+                return client
+        return None
+
+
     async def terminate(self) -> None:
         """热重载或卸载时取消提醒循环，避免旧任务继续发。"""
         task = self._remind_task
@@ -565,9 +593,9 @@ class RulesPlugin(Star):
         return json_response({"message": message})
 
     async def _pull_group_names(self) -> tuple:
-        """用记下的 OneBot 拉群列表。失败不写库。"""
-        bot = self._onebot
-        # 还没见过任何事件，调不了协议
+        """用 OneBot 拉群列表。没有事件时从适配器取客户端。失败不写库。"""
+        bot = self._ensure_onebot()
+        # 适配器也没有，页面只能等机器人上线
         if bot is None:
             return False, "还没有 OneBot，等机器人进过群后再拉。"
         raw = await call_result(_BotEvent(bot), "get_group_list")
@@ -937,6 +965,33 @@ class _BotEvent:
 
     def __init__(self, bot: object) -> None:
         self.bot = bot
+
+
+def _onebot_client_of(platform: object) -> object:
+    """适配器上能 call_action 的客户端。没有就 None。"""
+    getter = getattr(platform, "get_client", None)
+    # 官方 aiocqhttp 用 get_client 交出 CQHttp
+    if callable(getter):
+        client = getter()
+        # 和群事件上的 event.bot 同一套
+        if _can_call_action(client):
+            return client
+    bot = getattr(platform, "bot", None)
+    # 有的适配器把客户端挂在 .bot
+    if _can_call_action(bot):
+        return bot
+    return None
+
+
+def _can_call_action(bot: object) -> bool:
+    """和 call_result 认的是同一套 bot.api.call_action。"""
+    # 没有客户端就调不了
+    if bot is None:
+        return False
+    api = getattr(bot, "api", None)
+    chat = getattr(api, "call_action", None)
+    return callable(chat)
+
 
 
 ONLY_IN_GROUP = "这个功能只能在群里用。"
