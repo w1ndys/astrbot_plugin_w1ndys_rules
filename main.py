@@ -203,11 +203,11 @@ class RulesPlugin(Star):
         # 二维码试跑只认解码层，不认描述
         if kind == "qr":
             plan = plan_image_test(
-                self.config, text, bool(payload.get("qr_found"))
+                self.config, text, bool(payload.get("qr_found")), self.forbidden
             )
-        # 图片转写有可见文字就送模型，不走触发词
+        # 图片转写过触发词再送模型
         elif kind == "transcript":
-            plan = plan_image_test(self.config, text, False)
+            plan = plan_image_test(self.config, text, False, self.forbidden)
         else:
             plan = plan_forbidden_test(self.config, self.forbidden, text)
         # 没到模型这一步，直接把原因回给页面
@@ -221,10 +221,13 @@ class RulesPlugin(Star):
                     "status": "fail",
                     "trigger": plan.trigger,
                     "message": "当前没有可用的对话提供商。",
+                    "reason": "",
                 }
             )
-        verdict = await complete_yes_no(provider, plan.system, plan.user)
-        return json_response(test_result_payload(plan, verdict))
+        judged = await complete_yes_no(provider, plan.system, plan.user)
+        return json_response(
+            test_result_payload(plan, judged.verdict, judged.reason)
+        )
 
     def _register_keyword_pages(self) -> None:
         """注册关键词表接口。旧 AstrBot 没有这套 API 就跳过。"""

@@ -4,6 +4,8 @@
 import asyncio
 import json
 import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 try:
     from astrbot.api import logger as _log
@@ -23,7 +25,6 @@ from ..entity.constants import (
 )
 from .forbidden_judge import config_text
 from .forbidden_log import save_hit_log, take_payload
-
 
 
 def mute_seconds(config: object) -> int:
@@ -67,11 +68,96 @@ def feishu_text_payload(text: str) -> dict:
     return {"msg_type": "text", "content": {"text": text}}
 
 
-def feishu_alert_text(group_id: str, user_id: str, trigger: str, text: str) -> str:
+def feishu_alert_text(
+    group_id: str,
+    user_id: str,
+    trigger: str,
+    text: str,
+    happened_at: str = "",
+    judge_reason: str = "",
+) -> str:
     """管理员在飞书里看到的内容。不含 webhook。"""
-    return (
-        f"违禁词命中\n群：{group_id}\n成员：{user_id}\n触发词：{trigger}\n消息：{text}"
-    )
+    lines = [
+        "违禁词命中",
+        f"群：{group_id}",
+        f"成员：{user_id}",
+    ]
+    # 有消息时间才写，读不到就省略
+    if happened_at:
+        lines.append(f"时间：{happened_at}")
+    lines.append(f"触发词：{trigger}")
+    # 模型短原因方便人工看误判
+    if judge_reason:
+        lines.append(f"判定原因：{judge_reason}")
+    lines.append(f"消息：{text}")
+    return "\n".join(lines)
+
+
+_BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def message_happened_at(event: object) -> str:
+    """从事件取出北京时间字符串。读不到返回空串。"""
+    ts = _event_unix(event)
+    # 没有时间就不写这一行
+    if ts is None:
+        return ""
+    return datetime.fromtimestamp(ts, _BEIJING).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _event_unix(event: object) -> int | None:
+    """消息 unix 秒。优先 message_obj.timestamp / time，再看 raw_message。"""
+    obj = getattr(event, "message_obj", None)
+    # 没有消息对象就没时间
+    if obj is None:
+        return None
+    for key in ("timestamp", "time"):
+        ts = _as_unix(getattr(obj, key, None))
+        # 找到第一个能用的字段就停
+        if ts is not None:
+            return ts
+    return _unix_from_raw(getattr(obj, "raw_message", None))
+
+
+def _unix_from_raw(raw: object) -> int | None:
+    """从 OneBot 原始 dict 取 time。"""
+    # 没有原始包
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        for key in ("time", "timestamp"):
+            ts = _as_unix(raw.get(key))
+            # dict 里有合法时间
+            if ts is not None:
+                return ts
+        return None
+    getter = getattr(raw, "get", None)
+    # 不是 dict 也没有 get
+    if not callable(getter):
+        return None
+    for key in ("time", "timestamp"):
+        ts = _as_unix(getter(key))
+        if ts is not None:
+            return ts
+    return None
+
+
+def _as_unix(raw: object) -> int | None:
+    """把数字收成秒。毫秒会除 1000。"""
+    # 空值不当 0 点
+    if raw is None or raw is False:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    # 13 位当毫秒
+    if value > 10000000000:
+        value = value // 1000
+    # 非正数没有意义
+    if value <= 0:
+        return None
+    return value
 
 
 def post_json(url: str, body: dict) -> None:
@@ -307,6 +393,7 @@ async def notify_feishu(
     text: str,
     event: object,
     poster=None,
+    judge_reason: str = "",
 ) -> None:
     """有 https webhook 才发。测试可传入 poster，避免真的打到飞书。"""
     url = feishu_webhook(config)
@@ -314,7 +401,14 @@ async def notify_feishu(
     if not url:
         return
     body = feishu_text_payload(
-        feishu_alert_text(group_id, sender_id_of(event), trigger, text)
+        feishu_alert_text(
+            group_id,
+            sender_id_of(event),
+            trigger,
+            text,
+            message_happened_at(event),
+            judge_reason,
+        )
     )
     send = poster or post_json
     try:
@@ -333,15 +427,24 @@ async def apply_hit_actions(
     poster=None,
     log_store=None,
     reason_code: str = "",
+    judge_reason: str = "",
 ) -> str:
     """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。"""
     payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
     await recall_user_recent(event, group_id)
     await mute_member(event, group_id, mute_seconds(config))
-    await notify_feishu(config, group_id, trigger, text, event, poster)
+    await notify_feishu(
+        config, group_id, trigger, text, event, poster, judge_reason
+    )
     await save_hit_log(
-        log_store, group_id, sender_id_of(event), reason_code, trigger, payload
+        log_store,
+        group_id,
+        sender_id_of(event),
+        reason_code,
+        trigger,
+        payload,
+        judge_reason,
     )
     return remind_text(config)
 

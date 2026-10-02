@@ -1,4 +1,4 @@
-# 图片路：二维码直接违禁；原图 OCR 有可见文字就送模型，不走触发词。
+# 图片路：二维码直接违禁；原图 OCR 有可见文字后走触发词，命中再送模型。
 
 import sys
 import unittest
@@ -18,7 +18,6 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_SAMPLES,
-    IMAGE_TRANSCRIPT_HIT,
     QRCODE_HIT,
 )
 
@@ -107,30 +106,32 @@ def ready_config() -> dict:
 
 class ImagePlanTest(unittest.TestCase):
     def test_qr_skips_model(self) -> None:
-        plan = plan_image_test(ready_config(), "图片包含二维码", True)
+        plan = plan_image_test(ready_config(), "图片包含二维码", True, FakeStore())
         self.assertEqual(plan.status, "qr")
         self.assertEqual(plan.trigger, QRCODE_HIT)
 
-    def test_describe_qr_is_not_qr_layer(self) -> None:
-        plan = plan_image_test(ready_config(), "图片包含二维码", False)
-        self.assertEqual(plan.status, "ready")
-        self.assertEqual(plan.trigger, IMAGE_TRANSCRIPT_HIT)
-
-    def test_empty_skips(self) -> None:
-        plan = plan_image_test(ready_config(), "  ", False)
+    def test_describe_qr_without_trigger_skips(self) -> None:
+        plan = plan_image_test(
+            ready_config(), "图片包含二维码", False, FakeStore()
+        )
         self.assertEqual(plan.status, "skip")
 
-    def test_no_trigger_is_ready(self) -> None:
-        plan = plan_image_test(ready_config(), NO_TRIGGER, False)
-        self.assertEqual(plan.status, "ready")
-        self.assertEqual(plan.trigger, IMAGE_TRANSCRIPT_HIT)
-        self.assertIn("6m3p.cc", plan.user)
+    def test_empty_skips(self) -> None:
+        plan = plan_image_test(ready_config(), "  ", False, FakeStore())
+        self.assertEqual(plan.status, "error")
 
-    def test_system_matches_text_path(self) -> None:
-        plan = plan_image_test(ready_config(), HIT, False)
+    def test_no_trigger_skips(self) -> None:
+        plan = plan_image_test(ready_config(), NO_TRIGGER, False, FakeStore())
+        self.assertEqual(plan.status, "skip")
+        self.assertEqual(plan.trigger, "")
+
+    def test_trigger_in_ocr_is_ready(self) -> None:
+        plan = plan_image_test(ready_config(), HIT, False, FakeStore())
         self.assertEqual(plan.status, "ready")
+        self.assertEqual(plan.trigger, "广告")
         self.assertNotIn("海报", plan.system)
         self.assertIn("招嫖引流算违禁。", plan.system)
+        self.assertIn("可见文字", plan.user)
 
 
 class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
@@ -154,7 +155,7 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.calls, 0)
         self.assertEqual(event.bot.api.calls[0][0], "delete_msg")
 
-    async def test_transcript_hits_even_if_active(self) -> None:
+    async def test_transcript_hits_with_trigger(self) -> None:
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
@@ -168,7 +169,7 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(handled)
 
-    async def test_no_trigger_still_hits(self) -> None:
+    async def test_no_trigger_skips_model(self) -> None:
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
@@ -180,7 +181,7 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             decoder=lambda data: False,
             transcribe=lambda _event: NO_TRIGGER,
         )
-        self.assertTrue(handled)
+        self.assertFalse(handled)
 
     async def test_empty_transcript_skips(self) -> None:
         event = FakeEvent()
@@ -196,7 +197,7 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(handled)
 
-    async def test_local_ocr_hits_without_payload(self) -> None:
+    async def test_local_ocr_without_trigger_skips(self) -> None:
         event = FakeEvent()
         handled, _reply = await handle_forbidden_message(
             ready_config(),
@@ -208,9 +209,21 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             decoder=lambda data: False,
             ocr=lambda _data: NO_TRIGGER,
         )
+        self.assertFalse(handled)
+
+    async def test_local_ocr_with_trigger_hits(self) -> None:
+        event = FakeEvent()
+        handled, _reply = await handle_forbidden_message(
+            ready_config(),
+            FakeStore(),
+            event,
+            "123",
+            "",
+            self._provider("是"),
+            decoder=lambda data: False,
+            ocr=lambda _data: HIT,
+        )
         self.assertTrue(handled)
-
-
 
     def _provider(self, text: str):
         async def get_provider():

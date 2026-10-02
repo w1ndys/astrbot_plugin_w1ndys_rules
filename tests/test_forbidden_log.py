@@ -118,7 +118,17 @@ class ReasonTextTest(unittest.TestCase):
             reason_text(FORBIDDEN_REASON_IMAGE_MODEL, ""),
             "图片转写命中，模型判定是",
         )
+        self.assertEqual(
+            reason_text(FORBIDDEN_REASON_IMAGE_MODEL, "广告"),
+            "图片转写命中：广告",
+        )
         self.assertEqual(reason_text("other", "触发"), "触发")
+
+    def test_appends_judge_reason(self) -> None:
+        self.assertEqual(
+            reason_text(FORBIDDEN_REASON_MODEL, "广告", "像招嫖"),
+            "文本模型命中：广告：像招嫖",
+        )
 
 
 

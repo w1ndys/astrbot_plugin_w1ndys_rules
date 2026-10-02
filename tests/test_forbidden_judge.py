@@ -11,6 +11,7 @@ if PARENT not in sys.path:
 
 from astrbot_plugin_w1ndys_rules.business.forbidden_judge import (
     complete_yes_no,
+    parse_judge_reply,
     parse_yes_no,
     plan_forbidden_test,
     test_result_payload,
@@ -19,10 +20,10 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_CFG_TRIGGER_URL,
+    FORBIDDEN_JUDGE_REASON_MAX,
     FORBIDDEN_KIND_TRIGGER,
     FORBIDDEN_PATTERN_URL,
 )
-
 
 
 class FakeForbiddenStore:
@@ -104,7 +105,18 @@ class ForbiddenJudgeTest(unittest.TestCase):
         self.assertEqual(plan.user, "这里有广告")
         self.assertIn("广告引流算违禁", plan.system)
         self.assertIn("卖课私聊我", plan.system)
-        self.assertIn("只回答「是」或「否」", plan.system)
+        self.assertIn("第一行只回答「是」或「否」", plan.system)
+
+    def test_parse_judge_reply_reason(self) -> None:
+        hit = parse_judge_reply("是\n截图像招嫖引流")
+        self.assertEqual(hit.verdict, "yes")
+        self.assertEqual(hit.reason, "截图像招嫖引流")
+        clean = parse_judge_reply("否")
+        self.assertEqual(clean.verdict, "no")
+        self.assertEqual(clean.reason, "")
+        long_reason = "字" * (FORBIDDEN_JUDGE_REASON_MAX + 5)
+        clipped = parse_judge_reply("是\n" + long_reason)
+        self.assertEqual(len(clipped.reason), FORBIDDEN_JUDGE_REASON_MAX)
 
     def test_error_when_no_rule(self) -> None:
         plan = plan_forbidden_test({}, FakeForbiddenStore(["广告"]), "这里有广告")
@@ -143,28 +155,37 @@ class ForbiddenJudgeTest(unittest.TestCase):
 
 
 class ForbiddenCompleteTest(unittest.IsolatedAsyncioTestCase):
-    """验证提供商回答只接受严格的是或否。"""
+    """验证提供商回答只接受第一行严格的是或否。"""
 
     async def test_yes_and_no(self) -> None:
         yes = await complete_yes_no(FakeProvider("是"), "sys", "user")
         no = await complete_yes_no(FakeProvider("否"), "sys", "user")
-        self.assertEqual(yes, "yes")
-        self.assertEqual(no, "no")
+        self.assertEqual(yes.verdict, "yes")
+        self.assertEqual(no.verdict, "no")
+
+    async def test_yes_with_reason(self) -> None:
+        judged = await complete_yes_no(
+            FakeProvider("是\n像招嫖引流"), "sys", "user"
+        )
+        self.assertEqual(judged.verdict, "yes")
+        self.assertEqual(judged.reason, "像招嫖引流")
 
     async def test_messy_answer_is_fail(self) -> None:
-        verdict = await complete_yes_no(FakeProvider("是的"), "sys", "user")
-        self.assertEqual(verdict, "fail")
+        judged = await complete_yes_no(FakeProvider("是的"), "sys", "user")
+        self.assertEqual(judged.verdict, "fail")
 
     async def test_provider_error_is_fail(self) -> None:
-        verdict = await complete_yes_no(
+        judged = await complete_yes_no(
             FakeProvider(error=RuntimeError("boom")),
             "sys",
             "user",
         )
-        self.assertEqual(verdict, "fail")
+        self.assertEqual(judged.verdict, "fail")
 
     async def test_missing_provider_is_fail(self) -> None:
-        self.assertEqual(await complete_yes_no(None, "sys", "user"), "fail")
+        self.assertEqual(
+            (await complete_yes_no(None, "sys", "user")).verdict, "fail"
+        )
 
     async def test_err_role_is_fail(self) -> None:
         class Broken:
@@ -174,4 +195,5 @@ class ForbiddenCompleteTest(unittest.IsolatedAsyncioTestCase):
                 """返回 role=err 的响应。"""
                 return FakeResponse("是", role="err")
 
-        self.assertEqual(await complete_yes_no(Broken(), "sys", "user"), "fail")
+        judged = await complete_yes_no(Broken(), "sys", "user")
+        self.assertEqual(judged.verdict, "fail")

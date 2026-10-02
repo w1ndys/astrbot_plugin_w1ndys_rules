@@ -60,6 +60,7 @@ class FakeMessage:
     def __init__(self, message_id, role: str = "") -> None:
         self.message_id = message_id
         self.raw_message = {"sender": {"role": role}}
+        self.timestamp = 1759377600
 
 
 class FakeEvent:
@@ -197,7 +198,7 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
             event,
             "123",
             "这里有广告",
-            self._provider("是"),
+            self._provider("是\n像招嫖引流"),
             poster,
         )
         self.assertTrue(handled)
@@ -210,8 +211,11 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(posted), 1)
         self.assertEqual(posted[0][0], "https://example.com/hook")
-        self.assertIn("广告", posted[0][1]["content"]["text"])
-        self.assertNotIn("example.com", posted[0][1]["content"]["text"])
+        feishu = posted[0][1]["content"]["text"]
+        self.assertIn("广告", feishu)
+        self.assertIn("时间：", feishu)
+        self.assertIn("判定原因：像招嫖引流", feishu)
+        self.assertNotIn("example.com", feishu)
 
     async def test_empty_remind_and_no_https_webhook(self) -> None:
         event = FakeEvent()
