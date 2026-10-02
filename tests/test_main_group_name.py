@@ -106,12 +106,31 @@ class FakeBot:
         self.api = FakeApi(result)
 
 
+class FakeAdapter:
+    """模仿 aiocqhttp：get_client 交出 CQHttp。"""
+
+    def __init__(self, bot: object) -> None:
+        self._bot = bot
+
+    def get_client(self) -> object:
+        """和官方适配器一样交客户端。"""
+        return self._bot
+
+
+class FakePlatforms:
+    """context.platform_manager 只需要 insts 列表。"""
+
+    def __init__(self, insts: list) -> None:
+        self.platform_insts = insts
+
+
 class FakeContext:
     def __init__(self) -> None:
         self.routes = []
 
     def register_web_api(self, path, handler, methods, desc) -> None:
         self.routes.append((path, handler, methods, desc))
+
 
 
 class GroupNameEntryTest(unittest.IsolatedAsyncioTestCase):
@@ -158,3 +177,23 @@ class GroupNameEntryTest(unittest.IsolatedAsyncioTestCase):
         ok, message = await self.plugin._pull_group_names()
         self.assertFalse(ok)
         self.assertIn("失败", message)
+
+    async def test_pull_from_adapter_without_event(self) -> None:
+        bot = FakeBot([{"group_id": 1127665319, "group_name": "推荐群聊"}])
+        self.plugin.context.platform_manager = FakePlatforms([FakeAdapter(bot)])
+        ok, data = await self.plugin._pull_group_names()
+        self.assertTrue(ok)
+        self.assertEqual(
+            data["items"],
+            [{"group_id": "1127665319", "group_name": "推荐群聊"}],
+        )
+        self.assertIs(self.plugin._onebot, bot)
+        self.assertEqual(self.plugin.group_names.as_map(), {})
+
+    async def test_pull_skips_adapter_without_api(self) -> None:
+        empty = type("P", (), {})()
+        self.plugin.context.platform_manager = FakePlatforms([empty])
+        ok, message = await self.plugin._pull_group_names()
+        self.assertFalse(ok)
+        self.assertIn("OneBot", message)
+
