@@ -3,6 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
 
+function itemsToNameMap(items) {
+  // 映射表对照群号。没保存过的群显示空。
+  const map = {};
+  for (const item of items || []) {
+    const groupId = String(item.group_id || "").trim();
+    // 空群号对不上关键词行
+    if (!groupId) {
+      continue;
+    }
+    map[groupId] = String(item.group_name || "").trim();
+  }
+  return map;
+}
+
+
 export function KeywordsView() {
   const [filter, setFilter] = useState("");
   const [applied, setApplied] = useState("");
@@ -11,6 +26,7 @@ export function KeywordsView() {
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [names, setNames] = useState({});
   const [groupId, setGroupId] = useState("");
   const [keyword, setKeyword] = useState("");
   const [reply, setReply] = useState("");
@@ -41,15 +57,30 @@ export function KeywordsView() {
   useEffect(() => {
     let cancelled = false;
     async function boot() {
+      // 没有官方桥接就读不出表
       if (!bridge) {
         message.error("页面桥接未就绪，请刷新后重试。");
         return;
       }
       await bridge.ready();
+      // 卸载后不再写状态
       if (cancelled) {
         return;
       }
-      await load(1, 20, "");
+      try {
+        const mapped = await bridge.apiPost("group-name/list", {});
+        // 切走后丢掉映射结果
+        if (!cancelled) {
+          setNames(itemsToNameMap(mapped.items));
+        }
+      } catch (error) {
+        const text = error && error.message ? error.message : String(error);
+        message.error(text);
+      }
+      // 映射失败也把关键词表拉出来
+      if (!cancelled) {
+        await load(1, 20, "");
+      }
     }
     boot();
     return () => {
@@ -88,6 +119,11 @@ export function KeywordsView() {
 
   const columns = [
     { title: "群号", dataIndex: "group_id", key: "group_id" },
+    {
+      title: "群名",
+      key: "group_name",
+      render: (_, row) => names[row.group_id] || "",
+    },
     { title: "关键词", dataIndex: "keyword", key: "keyword" },
     { title: "回复", dataIndex: "reply", key: "reply" },
     {

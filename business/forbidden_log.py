@@ -15,8 +15,17 @@ from ..entity.constants import (
 _BASE64_PREFIX = "base64://"
 
 
-def reason_text(reason_code: str, trigger: str) -> str:
-    """把原因码收成人话。模型命中带上触发词。"""
+def reason_text(reason_code: str, trigger: str, judge_reason: str = "") -> str:
+    """把原因码收成人话。模型命中带上触发词和短原因。"""
+    base = _reason_base(reason_code, trigger)
+    # 没有模型短原因就用人话本身
+    if not judge_reason:
+        return base
+    return f"{base}：{judge_reason}"
+
+
+def _reason_base(reason_code: str, trigger: str) -> str:
+    """不含模型短原因的人话。"""
     # 文本模型判定「是」
     if reason_code == FORBIDDEN_REASON_MODEL:
         # 有触发词写进说明，方便对照飞书短通知
@@ -31,6 +40,9 @@ def reason_text(reason_code: str, trigger: str) -> str:
         return "二维码直接违禁"
     # 图片转写后模型判定「是」
     if reason_code == FORBIDDEN_REASON_IMAGE_MODEL:
+        # 转写命中也带触发词
+        if trigger:
+            return f"图片转写命中：{trigger}"
         return "图片转写命中，模型判定是"
     # 未知码仍尽量留下触发名，避免日志空白
     if trigger:
@@ -62,6 +74,7 @@ async def save_hit_log(
     reason_code: str,
     trigger: str,
     payload: tuple[str, str, str] | None,
+    judge_reason: str = "",
 ) -> None:
     """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。"""
     # 没采集就表示这次不记
@@ -79,7 +92,7 @@ async def save_hit_log(
             group_id,
             user_id,
             reason_code,
-            reason_text(reason_code, trigger),
+            reason_text(reason_code, trigger, judge_reason),
             text,
             json_text,
             images,

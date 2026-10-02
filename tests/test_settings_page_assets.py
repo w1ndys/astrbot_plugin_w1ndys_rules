@@ -27,3 +27,14 @@ class SettingsPageAssetsTest(unittest.TestCase):
         self.assertIn("rowsToLists", js)
         self.assertIn("按群号", js)
         self.assertNotIn('mode="tags"', js)
+
+    def test_settings_view_has_group_name_column(self) -> None:
+        # 群名列和拉取/保存按钮在配置页源码里。
+        js = (SRC / "settings-view.jsx").read_text()
+        self.assertIn('title: "群名"', js)
+        self.assertIn("拉取群名", js)
+        self.assertIn("保存群名", js)
+        self.assertIn("group-name/pull", js)
+        self.assertIn("group-name/save", js)
+        self.assertIn("group-name/list", js)
+

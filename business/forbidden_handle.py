@@ -18,7 +18,6 @@ from .forbidden_judge import complete_yes_no, plan_forbidden_test
 from .qq_role import is_qq_group_staff, speaker_qq_role
 
 
-
 async def handle_forbidden_message(
     config: object,
     store: ForbiddenStore,
@@ -60,6 +59,7 @@ async def handle_forbidden_message(
         decoder,
         transcribe,
         ocr,
+        store,
     )
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:
@@ -101,14 +101,14 @@ async def _handle_forbidden_text(
             )
         return False, ""
     provider = await get_provider()
-    verdict = await complete_yes_no(provider, plan.system, plan.user)
-    # 只有整句「是」才处置，否和乱答都不动
-    if verdict != "yes":
+    judged = await complete_yes_no(provider, plan.system, plan.user)
+    # 只有第一行「是」才处置，否和乱答都不动
+    if judged.verdict != "yes":
         _log.info(
             "[rules] forbidden text verdict group=%s trigger=%s verdict=%s",
             group_id,
             plan.trigger,
-            verdict,
+            judged.verdict,
         )
         return False, ""
     remind = await apply_hit_actions(
@@ -120,6 +120,7 @@ async def _handle_forbidden_text(
         poster,
         log_store,
         FORBIDDEN_REASON_MODEL,
+        judged.reason,
     )
     _log.info("[rules] forbidden text hit group=%s trigger=%s", group_id, plan.trigger)
     return True, remind

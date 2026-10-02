@@ -1,5 +1,5 @@
-# 业务层：图片违禁路。二维码层先跑；原图本地 OCR 有可见文字就送是/否模型。
-# 不读协议 payload 的 ocr/text。不走触发词。测试页不处置。
+# 业务层：图片违禁路。二维码层先跑；原图本地 OCR 有可见文字后走触发词，命中再送是/否模型。
+# 不读协议 payload 的 ocr/text。测试页不处置。
 
 import inspect
 
@@ -12,24 +12,21 @@ except ImportError:
     _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from ..entity.constants import (
-    FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_CFG_SAMPLES,
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_QRCODE,
-    IMAGE_TRANSCRIPT_HIT,
     QRCODE_HIT,
 )
 from .forbidden_action import apply_hit_actions
 from .forbidden_judge import (
     ForbiddenTestPlan,
-    build_system_prompt,
     complete_yes_no,
-    config_text,
+    plan_forbidden_test,
 )
 from .forbidden_ocr import ocr_text_from_b64
 from .forbidden_qr import qr_found_in_b64
 
 _STICKER_TYPES = {"Face", "Mface"}
+
 
 def message_has_image(event: object) -> bool:
     """消息链里有没有图片或表情段。"""
@@ -39,30 +36,26 @@ def message_has_image(event: object) -> bool:
 
 
 def plan_image_test(
-    config: object, transcript: str, qr_found: bool
+    config: object, transcript: str, qr_found: bool, store=None
 ) -> ForbiddenTestPlan:
-    """测试页：二维码层或转写有字就送模型。不调用模型，不处置。"""
+    """测试页与热路径：二维码直判；转写走和文本路一样的触发词门槛。"""
     # 解码层检出，描述里写二维码也不算
     if qr_found:
         return ForbiddenTestPlan(
             "qr", "二维码直接违禁，不送模型。", QRCODE_HIT
         )
-    text = transcript.strip()
-    # 空转写没有判断材料，本刀不升视觉
-    if not text:
-        return ForbiddenTestPlan("skip", "没有可见文字，不会送模型。")
-    samples = config_text(config, FORBIDDEN_CFG_SAMPLES)
-    guideline = config_text(config, FORBIDDEN_CFG_GUIDELINE)
-    # 和文本路一样，没准则没样本就测不了
-    if not samples.strip() and not guideline.strip():
-        return ForbiddenTestPlan(
-            "error", "请先填写控制台判断准则或违禁样本。"
-        )
+    # 没有仓库就配不出触发词
+    if store is None:
+        return ForbiddenTestPlan("error", "请先添加违禁触发词。")
+    plan = plan_forbidden_test(config, store, transcript)
+    # 空转写、没触发词、没准则，沿用文本路的 status
+    if plan.status != "ready":
+        return plan
     return ForbiddenTestPlan(
         "ready",
         "",
-        IMAGE_TRANSCRIPT_HIT,
-        build_system_prompt(samples, guideline),
+        plan.trigger,
+        plan.system,
         _image_user(transcript),
     )
 
@@ -77,8 +70,9 @@ async def handle_forbidden_images(
     decoder=None,
     transcribe=None,
     ocr=None,
+    store=None,
 ) -> tuple[bool, str]:
-    """图片路：先二维码，再转写有字就送模型。没有图返回未处置。"""
+    """图片路：先二维码，再转写过触发词后送模型。没有图返回未处置。"""
     comps = _image_comps(event)
     # 纯文本不走这里
     if not comps:
@@ -106,8 +100,8 @@ async def handle_forbidden_images(
         len(text),
         preview,
     )
-    plan = plan_image_test(config, text, False)
-    # 空转写或没设定，不打模型
+    plan = plan_image_test(config, text, False, store)
+    # 空转写、没触发词或没设定，不打模型
     if plan.status != "ready":
         _log.info(
             "[rules] image skip group=%s status=%s msg=%s",
@@ -117,10 +111,14 @@ async def handle_forbidden_images(
         )
         return False, ""
     provider = await get_provider()
-    verdict = await complete_yes_no(provider, plan.system, plan.user)
-    # 只有整句「是」才处置
-    if verdict != "yes":
-        _log.info("[rules] image verdict group=%s verdict=%s", group_id, verdict)
+    judged = await complete_yes_no(provider, plan.system, plan.user)
+    # 只有第一行「是」才处置
+    if judged.verdict != "yes":
+        _log.info(
+            "[rules] image verdict group=%s verdict=%s",
+            group_id,
+            judged.verdict,
+        )
         return False, ""
     remind = await apply_hit_actions(
         event,
@@ -131,6 +129,7 @@ async def handle_forbidden_images(
         poster,
         log_store,
         FORBIDDEN_REASON_IMAGE_MODEL,
+        judged.reason,
     )
     _log.info("[rules] image model hit group=%s", group_id)
     return True, remind
@@ -170,7 +169,6 @@ def skip_vision(comp: object) -> bool:
     loc = str(getattr(comp, "url", None) or getattr(comp, "file", None) or "")
     # gif 当表情雨，不当广告图
     return loc.lower().endswith(".gif")
-
 
 
 async def _qr_hit(comps: list, decoder) -> bool:

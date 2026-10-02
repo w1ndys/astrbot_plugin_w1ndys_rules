@@ -73,9 +73,40 @@ function rowsToLists(rows) {
   return lists;
 }
 
-function makeColumns(onToggle, onRemove) {
-  // 群号列 + 功能勾选列 + 删除。
-  const columns = [{ title: "群号", dataIndex: "groupId", key: "groupId" }];
+function itemsToNameMap(items) {
+  // 接口 items 收成群号到群名，给表格对照。
+  const map = {};
+  for (const item of items || []) {
+    const groupId = String(item.group_id || "").trim();
+    // 空群号对不上勾选表
+    if (!groupId) {
+      continue;
+    }
+    map[groupId] = String(item.group_name || "").trim();
+  }
+  return map;
+}
+
+function nameDraftItems(names) {
+  // 草稿转保存请求。按群号排，方便对日志。
+  const items = [];
+  const ids = Object.keys(names).sort();
+  for (const groupId of ids) {
+    items.push({ group_id: groupId, group_name: names[groupId] || "" });
+  }
+  return items;
+}
+
+function makeColumns(onToggle, onRemove, names) {
+  // 群号列 + 群名列 + 功能勾选列 + 删除。
+  const columns = [
+    { title: "群号", dataIndex: "groupId", key: "groupId" },
+    {
+      title: "群名",
+      key: "groupName",
+      render: (_, row) => names[row.groupId] || "",
+    },
+  ];
   for (const feature of FEATURES) {
     columns.push({
       title: feature.title,
@@ -137,8 +168,8 @@ function addRow(rows, setRows, rawId, setRawId) {
   setRawId("");
 }
 
-async function bootSettings(bridge, form, setRows, setLoading, cancelled) {
-  // 进页拉配置，把名单摊成表。
+async function bootSettings(bridge, form, setRows, setNames, setLoading, cancelled) {
+  // 进页拉配置和已保存群名。
   // 没有官方桥接就读不出配置
   if (!bridge) {
     message.error("页面桥接未就绪，请刷新后重试。");
@@ -157,6 +188,11 @@ async function bootSettings(bridge, form, setRows, setLoading, cancelled) {
       form.setFieldsValue(data);
       setRows(listsToRows(data));
     }
+    const names = await bridge.apiPost("group-name/list", {});
+    // 映射失败不影响勾选表，上面已经摊好了
+    if (!cancelled()) {
+      setNames(itemsToNameMap(names.items));
+    }
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
     message.error(text);
@@ -165,7 +201,7 @@ async function bootSettings(bridge, form, setRows, setLoading, cancelled) {
 }
 
 async function saveSettings(bridge, form, rows) {
-  // 勾选转名单，连同文案秒数一起 POST。
+  // 勾选转名单，连同文案秒数一起 POST。不写群名。
   const values = await form.validateFields();
   const payload = { ...values, ...rowsToLists(rows) };
   try {
@@ -177,13 +213,40 @@ async function saveSettings(bridge, form, rows) {
   }
 }
 
+async function pullGroupNames(bridge, setNames, setBusy) {
+  // 调一次协议，只改草稿。
+  setBusy(true);
+  try {
+    const data = await bridge.apiPost("group-name/pull", {});
+    const incoming = itemsToNameMap(data.items);
+    setNames((current) => ({ ...current, ...incoming }));
+    message.success("已填入群名，尚未保存。");
+  } catch (error) {
+    const text = error && error.message ? error.message : String(error);
+    message.error(text);
+  }
+  setBusy(false);
+}
+
+async function saveGroupNames(bridge, names) {
+  // 把草稿 upsert 进映射表。
+  try {
+    const result = await bridge.apiPost("group-name/save", {
+      items: nameDraftItems(names),
+    });
+    message.success(result.message || "已保存群名");
+  } catch (error) {
+    const text = error && error.message ? error.message : String(error);
+    message.error(text);
+  }
+}
+
 function GroupTable(props) {
   // 群号表和添加框。
   return (
     <>
       <p className="hint">
-        按群号一行勾选要开的功能，保存写成各功能名单。没出现的群就是全关。飞书 webhook 也在本页改。
-
+        按群号一行勾选要开的功能，保存写成各功能名单。没出现的群就是全关。飞书 webhook 也在本页改。群名只展示；点「拉取群名」填草稿，「保存群名」才写入映射表。欢迎语和关键词页读同一张表。
       </p>
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
@@ -195,6 +258,10 @@ function GroupTable(props) {
         <Button onClick={() => addRow(props.rows, props.setRows, props.newGroupId, props.setNewGroupId)}>
           添加群
         </Button>
+        <Button loading={props.nameBusy} onClick={props.onPullNames}>
+          拉取群名
+        </Button>
+        <Button onClick={props.onSaveNames}>保存群名</Button>
       </Space>
       <Table
         rowKey="groupId"
@@ -260,16 +327,18 @@ function ExtraFields(props) {
 }
 
 export function SettingsView() {
-  // 全局配置面板：表管功能开关，表单管文案秒数。
+  // 全局配置面板：表管功能开关，表单管文案秒数，群名单独拉和存。
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
+  const [names, setNames] = useState({});
+  const [nameBusy, setNameBusy] = useState(false);
   const [newGroupId, setNewGroupId] = useState("");
   const bridge = window.AstrBotPluginPage;
 
   useEffect(() => {
     let cancelled = false;
-    bootSettings(bridge, form, setRows, setLoading, () => cancelled);
+    bootSettings(bridge, form, setRows, setNames, setLoading, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -278,6 +347,7 @@ export function SettingsView() {
   const columns = makeColumns(
     (groupId, key, checked) => toggleRowFeature(setRows, groupId, key, checked),
     (groupId) => removeRow(setRows, groupId),
+    names,
   );
 
   return (
@@ -288,6 +358,9 @@ export function SettingsView() {
         newGroupId={newGroupId}
         setNewGroupId={setNewGroupId}
         columns={columns}
+        nameBusy={nameBusy}
+        onPullNames={() => pullGroupNames(bridge, setNames, setNameBusy)}
+        onSaveNames={() => saveGroupNames(bridge, names)}
       />
       <ExtraFields form={form} onSave={() => saveSettings(bridge, form, rows)} />
     </Card>

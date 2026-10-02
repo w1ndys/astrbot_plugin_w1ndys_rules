@@ -34,6 +34,7 @@ from .business.blacklist_admin import (
     list_users,
 )
 from .business.debug_payload import inspect_payload
+from .business.forbidden_action import call_result
 from .business.forbidden_forward import resolve_audit_text
 from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_image import message_has_image, plan_image_test
@@ -49,6 +50,11 @@ from .business.forbidden_trigger_page import (
     save_trigger,
 )
 from .business.group_card import handle_group_card
+from .business.group_name_page import (
+    list_group_names,
+    pull_group_names,
+    save_group_names,
+)
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
 from .business.keyword_page import list_keywords, remove_keyword, save_keyword
@@ -71,6 +77,7 @@ from .business.welcome_send import is_group_increase, pick_welcome
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_log_store import ForbiddenLogStore
 from .data.forbidden_store import ForbiddenStore
+from .data.group_name_store import GroupNameStore
 from .data.invite_store import InviteStore
 from .data.keyword_store import KeywordStore
 from .data.verify_store import VerifyStore
@@ -102,6 +109,7 @@ class RulesPlugin(Star):
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
         self.welcome = WelcomeStore(db_path)
+        self.group_names = GroupNameStore(db_path)
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
         self._remind_task = None
@@ -112,6 +120,7 @@ class RulesPlugin(Star):
         self._register_trigger_pages()
         self._register_log_pages()
         self._register_settings_pages()
+        self._register_group_name_pages()
         logger.info("[rules] 群规业务库已载入内存：%s", db_path)
 
     def _start_remind_loop(self) -> None:
@@ -165,6 +174,34 @@ class RulesPlugin(Star):
             return
         self._onebot = bot
 
+    def _ensure_onebot(self) -> object:
+        """已记下的优先；没有就从平台适配器取，给 Pages 拉取用。"""
+        bot = self._onebot
+        # 群消息已经记过，直接用
+        if bot is not None:
+            return bot
+        bot = self._onebot_from_context()
+        # 适配器也没有，Pages 只能报还没 bot
+        if bot is None:
+            return None
+        self._onebot = bot
+        return bot
+
+    def _onebot_from_context(self) -> object:
+        """从已加载的平台实例里找能调 OneBot 的客户端。"""
+        manager = getattr(self.context, "platform_manager", None)
+        insts = getattr(manager, "platform_insts", None)
+        # 旧 AstrBot 或还没挂平台
+        if not insts:
+            return None
+        for platform in insts:
+            client = _onebot_client_of(platform)
+            # 第一个能调的就用，多 QQ 适配器不挑
+            if client is not None:
+                return client
+        return None
+
+
     async def terminate(self) -> None:
         """热重载或卸载时取消提醒循环，避免旧任务继续发。"""
         task = self._remind_task
@@ -203,11 +240,11 @@ class RulesPlugin(Star):
         # 二维码试跑只认解码层，不认描述
         if kind == "qr":
             plan = plan_image_test(
-                self.config, text, bool(payload.get("qr_found"))
+                self.config, text, bool(payload.get("qr_found")), self.forbidden
             )
-        # 图片转写有可见文字就送模型，不走触发词
+        # 图片转写过触发词再送模型
         elif kind == "transcript":
-            plan = plan_image_test(self.config, text, False)
+            plan = plan_image_test(self.config, text, False, self.forbidden)
         else:
             plan = plan_forbidden_test(self.config, self.forbidden, text)
         # 没到模型这一步，直接把原因回给页面
@@ -221,10 +258,13 @@ class RulesPlugin(Star):
                     "status": "fail",
                     "trigger": plan.trigger,
                     "message": "当前没有可用的对话提供商。",
+                    "reason": "",
                 }
             )
-        verdict = await complete_yes_no(provider, plan.system, plan.user)
-        return json_response(test_result_payload(plan, verdict))
+        judged = await complete_yes_no(provider, plan.system, plan.user)
+        return json_response(
+            test_result_payload(plan, judged.verdict, judged.reason)
+        )
 
     def _register_keyword_pages(self) -> None:
         """注册关键词表接口。旧 AstrBot 没有这套 API 就跳过。"""
@@ -496,6 +536,74 @@ class RulesPlugin(Star):
         if not ok:
             return error_response(message, status_code=400)
         return json_response({"message": message})
+
+    def _register_group_name_pages(self) -> None:
+        """注册群名映射接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/group-name/list",
+            self.page_group_name_list,
+            ["POST"],
+            "读取群名映射",
+        )
+        register(
+            f"/{PLUGIN_NAME}/group-name/pull",
+            self.page_group_name_pull,
+            ["POST"],
+            "从 OneBot 拉取群名",
+        )
+        register(
+            f"/{PLUGIN_NAME}/group-name/save",
+            self.page_group_name_save,
+            ["POST"],
+            "保存群名映射",
+        )
+
+    async def page_group_name_list(self):
+        """WebUI：读已保存的群号到群名。"""
+        from astrbot.api.web import json_response
+
+        return json_response(list_group_names(self.group_names))
+
+    async def page_group_name_pull(self):
+        """WebUI：调一次 get_group_list，不写库。"""
+        from astrbot.api.web import error_response, json_response
+
+        ok, result = await self._pull_group_names()
+        # 没 bot 或协议失败用 400，页面展示原因
+        if not ok:
+            return error_response(str(result), status_code=400)
+        return json_response(result)
+
+    async def page_group_name_save(self):
+        """WebUI：把草稿 upsert 进映射表。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就写不回去
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, message = await save_group_names(self.group_names, payload)
+        # 校验失败用 400
+        if not ok:
+            return error_response(message, status_code=400)
+        return json_response({"message": message})
+
+    async def _pull_group_names(self) -> tuple:
+        """用 OneBot 拉群列表。没有事件时从适配器取客户端。失败不写库。"""
+        bot = self._ensure_onebot()
+        # 适配器也没有，页面只能等机器人上线
+        if bot is None:
+            return False, "还没有 OneBot，等机器人进过群后再拉。"
+        raw = await call_result(_BotEvent(bot), "get_group_list")
+        # 超时或适配器抛错
+        if raw is None:
+            return False, "拉取群列表失败。"
+        return True, pull_group_names(raw)
+
 
     async def _using_provider(self):
         """取当前对话提供商。测试页没有群会话，不传 umo。"""
@@ -857,6 +965,33 @@ class _BotEvent:
 
     def __init__(self, bot: object) -> None:
         self.bot = bot
+
+
+def _onebot_client_of(platform: object) -> object:
+    """适配器上能 call_action 的客户端。没有就 None。"""
+    getter = getattr(platform, "get_client", None)
+    # 官方 aiocqhttp 用 get_client 交出 CQHttp
+    if callable(getter):
+        client = getter()
+        # 和群事件上的 event.bot 同一套
+        if _can_call_action(client):
+            return client
+    bot = getattr(platform, "bot", None)
+    # 有的适配器把客户端挂在 .bot
+    if _can_call_action(bot):
+        return bot
+    return None
+
+
+def _can_call_action(bot: object) -> bool:
+    """和 call_result 认的是同一套 bot.api.call_action。"""
+    # 没有客户端就调不了
+    if bot is None:
+        return False
+    api = getattr(bot, "api", None)
+    chat = getattr(api, "call_action", None)
+    return callable(chat)
+
 
 
 ONLY_IN_GROUP = "这个功能只能在群里用。"
