@@ -89,6 +89,11 @@ install_astrbot_stubs()
 
 from astrbot_plugin_w1ndys_rules.business.verify_admin import REJECT_MESSAGE
 from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
+from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
+from astrbot_plugin_w1ndys_rules.entity.constants import (
+    CFG_WELCOME_GROUPS,
+    CFG_WELCOME_TEXT,
+)
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
 
 
@@ -197,3 +202,38 @@ class VerifyToolEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(guest.sent, [])
         self.assertEqual(guest.bot.api.calls, [])
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
+
+    async def test_pass_sends_welcome_privately_before_group_notice(self) -> None:
+        """工具通过仍是群事件：欢迎语私聊，群里只报通过句。"""
+        self.plugin.welcome = WelcomeStore(Path(self._tmp.name) / "rules.db")
+        self.plugin.settings = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
+        }
+        await self.plugin.verify.put("123", "10001", "123456")
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
+        message = await self.plugin.tool_verify_pass(self.event, "10001")
+        self.assertEqual(message, "已通过入群验证：10001")
+        calls = self.event.bot.api.calls
+        self.assertEqual(calls[0][0], "set_group_ban")
+        self.assertEqual(calls[1], ("delete_msg", {"message_id": 77}))
+        # 先私聊欢迎语，再在群里报通过
+        self.assertEqual(
+            calls[2],
+            ("send_private_msg", {"user_id": 10001, "message": "请先看群规"}),
+        )
+        self.assertEqual(calls[3][0], "send_group_msg")
+        self.assertIn("已通过人机验证。", str(calls[3][1]["message"]))
+
+    async def test_reject_does_not_send_private_welcome(self) -> None:
+        """拒绝路径不发私聊欢迎语。"""
+        self.plugin.welcome = WelcomeStore(Path(self._tmp.name) / "rules.db")
+        self.plugin.settings = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
+        }
+        await self.plugin.verify.put("123", "10001", "123456")
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
+        await self.plugin.tool_verify_reject(self.event, "10001")
+        actions = [name for name, _kwargs in self.event.bot.api.calls]
+        self.assertNotIn("send_private_msg", actions)

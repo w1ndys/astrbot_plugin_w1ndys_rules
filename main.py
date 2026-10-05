@@ -63,6 +63,7 @@ from .business.settings_page import get_settings, save_settings
 from .business.verify_action import (
     mute_user,
     recall_message_id,
+    send_private_plain,
     send_verify_prompt,
     unmute_user,
 )
@@ -632,7 +633,7 @@ class RulesPlugin(Star):
         return json_response(self.settings)
 
     async def page_settings_save(self):
-        """WebUI：写回非密钥字段。"""
+        """WebUI：把带上的字段写回 plugin_setting。"""
         from astrbot.api.web import error_response, json_response, request
 
         payload = await request.json(default={})
@@ -814,20 +815,24 @@ class RulesPlugin(Star):
         """私聊交码。不是待验证就放过，让别的插件和模型继续。"""
         self._remember_bot(event)
         text = event.message_str or ""
-        handled, reply = await handle_verify_private(
+        handled, reply, passed_group = await handle_verify_private(
             self.verify, event, _sender_id_of(event), text
         )
         # 这个人没有 pending，不当验证私聊
         if not handled:
             return
-        # 失败回不对；成功回已通过。都在私聊，拦 LLM
+        # 通过且这一群有欢迎语时，私聊只发欢迎语
+        if passed_group:
+            welcome = _welcome_text(self, passed_group)
+            if welcome:
+                reply = welcome
         if reply:
             yield event.plain_result(reply)
         _stop_llm(event)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
-        """群成员增加：欢迎语和验证说明分开发。空通知也要停 LLM。"""
+        """群成员增加：入群不发欢迎语，只在开了验证时发说明。空通知也要停 LLM。"""
         self._remember_bot(event)
         group_id = _group_id_of(event)
         # 拿不到群号就不是群通知
@@ -848,8 +853,6 @@ class RulesPlugin(Star):
             user_id,
             _self_id_of(event),
         )
-        welcome = pick_welcome(self.welcome, self.settings, group_id)
-
         verify = await start_pending(
             self.verify,
             self.settings,
@@ -857,19 +860,17 @@ class RulesPlugin(Star):
             user_id,
             _self_id_of(event),
         )
-
-        # 有欢迎语就当场发出。不能 yield：事件已停，框架不会再恢复本处理器，禁言和验证码就发不出去
-        if welcome:
-            await event.send(_join_at_text(event, user_id, welcome))
-        # 没开验证就只发欢迎语
-        if not verify:
+        # 开了验证就只禁言和发验证码，欢迎语等通过后私聊
+        if verify:
+            await mute_user(event, group_id, user_id, VERIFY_JOIN_MUTE_SECONDS)
+            mid = await send_verify_prompt(event, user_id, verify)
+            # 没拿到消息 ID 也先让人去私聊交码
+            if not mid:
+                return
+            await self.verify.set_prompt_message_id(group_id, user_id, mid)
             return
-        await mute_user(event, group_id, user_id, VERIFY_JOIN_MUTE_SECONDS)
-        mid = await send_verify_prompt(event, user_id, verify)
-        # 没拿到消息 ID 也先让人去私聊交码
-        if not mid:
-            return
-        await self.verify.set_prompt_message_id(group_id, user_id, mid)
+        # 没开验证也不往群里发欢迎语
+        return
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_decrease(self, event: AstrMessageEvent):
@@ -906,9 +907,13 @@ class RulesPlugin(Star):
         user_id = _sender_id_of(event)
         prompt_id = self.verify.get_prompt_message_id(group_id, user_id)
         dropped = await drop_pending(self.verify, group_id, user_id)
-        # 有 pending 才是验证通过：先撤回入群提示，再报一句
+        # 有 pending 才算验证通过：先撤回入群提示，再发这一群的欢迎语，最后报通过
         if dropped:
             await recall_message_id(event, prompt_id)
+            welcome = _welcome_text(self, group_id)
+            # 管理员在群里解禁，欢迎语也发回这个群，不进私聊
+            if welcome:
+                yield _join_at_text(event, user_id, welcome)
             yield event.plain_result(PASS_REPLY)
 
 
@@ -930,7 +935,6 @@ class RulesPlugin(Star):
         """把一个人加入本群黑名单。只在管理员明确要求拉黑时调用。不踢人。
         写操作直接执行。最终回复如实转达工具结果。
 
-        Args:
             user_id(string): 要拉黑的 QQ 号，只填数字
         """
         return await _with_group(
@@ -1014,7 +1018,7 @@ class RulesPlugin(Star):
         """
         return await _with_group(
             event,
-            lambda group_id: _verify_pass(self.verify, event, group_id, user_id),
+            lambda group_id: _verify_pass(self, self.verify, event, group_id, user_id),
         )
 
     @filter.llm_tool(name="verify_reject")
@@ -1127,8 +1131,17 @@ def _can_call_action(bot: object) -> bool:
 ONLY_IN_GROUP = "这个功能只能在群里用。"
 
 
+def _welcome_text(plugin: object, group_id: str) -> str:
+    """取这一群当前欢迎语。没挂存储或没开就空串。"""
+    welcome = getattr(plugin, "welcome", None)
+    # 旧测试桩没有欢迎语存储，不能把通过流程打挂
+    if welcome is None:
+        return ""
+    return pick_welcome(welcome, getattr(plugin, "settings", None), group_id)
+
+
 async def _verify_pass(
-    store: VerifyStore, event: object, group_id: str, user_id: str
+    plugin: object, store: VerifyStore, event: object, group_id: str, user_id: str
 ) -> str:
     """管理员通过后解禁、撤回提示、群里 @。没通过就不调 OneBot。"""
     clean = user_id.strip()
@@ -1141,6 +1154,10 @@ async def _verify_pass(
     if unmute:
         await unmute_user(event, group_id, unmute)
         await recall_message_id(event, prompt_id)
+        welcome = _welcome_text(plugin, group_id)
+        # 工具通过的群事件不能用 yield 发私聊
+        if welcome:
+            await send_private_plain(event, unmute, welcome)
         await send_verify_prompt(event, unmute, PASS_REPLY)
     return message
 
