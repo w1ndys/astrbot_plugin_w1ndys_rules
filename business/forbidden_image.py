@@ -71,6 +71,7 @@ async def handle_forbidden_images(
     transcribe=None,
     ocr=None,
     store=None,
+    mute_store=None,
 ) -> tuple[bool, str]:
     """图片路：先二维码，再转写过触发词后送模型。没有图返回未处置。"""
     comps = _image_comps(event)
@@ -90,6 +91,7 @@ async def handle_forbidden_images(
             poster,
             log_store,
             FORBIDDEN_REASON_QRCODE,
+            mute_store=mute_store,
         )
         return True, remind
     text = await _transcript_of(event, comps, transcribe, ocr)
@@ -130,6 +132,7 @@ async def handle_forbidden_images(
         log_store,
         FORBIDDEN_REASON_IMAGE_MODEL,
         judged.reason,
+        mute_store=mute_store,
     )
     _log.info("[rules] image model hit group=%s", group_id)
     return True, remind

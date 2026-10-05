@@ -196,7 +196,6 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.invite = InviteStore(db_path)
         self.plugin.welcome = WelcomeStore(db_path)
-        self.plugin.config = {}
         self.plugin.settings = {}
 
 

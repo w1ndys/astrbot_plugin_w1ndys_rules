@@ -75,8 +75,16 @@ from .business.verify_remind import send_due_remind
 from .business.verify_unmute import is_admin_unmute
 from .business.welcome_page import list_welcomes, remove_welcome, save_welcome
 from .business.welcome_send import is_group_increase, pick_welcome
+from .business.whitelist import (
+    add_blacklist,
+    add_whitelist,
+    pardon_forbidden_mute,
+    remove_blacklist,
+    remove_whitelist,
+)
 from .data.blacklist_store import BlacklistStore
 from .data.forbidden_log_store import ForbiddenLogStore
+from .data.forbidden_mute_store import ForbiddenMuteStore
 from .data.forbidden_store import ForbiddenStore
 from .data.group_name_store import GroupNameStore
 from .data.invite_store import InviteStore
@@ -84,6 +92,7 @@ from .data.keyword_store import KeywordStore
 from .data.setting_store import SettingStore
 from .data.verify_store import VerifyStore
 from .data.welcome_store import WelcomeStore
+from .data.whitelist_store import WhitelistStore
 from .entity.constants import (
     BLACKLIST_GLOBAL_SCOPE,
     BLACKLIST_LIST_LIMIT,
@@ -110,8 +119,10 @@ class RulesPlugin(Star):
         self.verify = VerifyStore(db_path)
         self.invite = InviteStore(db_path)
         self.blacklist = BlacklistStore(db_path)
+        self.whitelist = WhitelistStore(db_path)
         self.welcome = WelcomeStore(db_path)
         self.group_names = GroupNameStore(db_path)
+        self.forbidden_mutes = ForbiddenMuteStore(db_path)
         # 配置改存库：空表才从 schema 导入一次，之后热路径只读 self.settings
         self.setting_store = SettingStore(db_path)
         self.setting_store.import_if_empty(get_settings(config))
@@ -246,13 +257,13 @@ class RulesPlugin(Star):
         # 二维码试跑只认解码层，不认描述
         if kind == "qr":
             plan = plan_image_test(
-                self.config, text, bool(payload.get("qr_found")), self.forbidden
+                self.settings, text, bool(payload.get("qr_found")), self.forbidden
             )
         # 图片转写过触发词再送模型
         elif kind == "transcript":
-            plan = plan_image_test(self.config, text, False, self.forbidden)
+            plan = plan_image_test(self.settings, text, False, self.forbidden)
         else:
-            plan = plan_forbidden_test(self.config, self.forbidden, text)
+            plan = plan_forbidden_test(self.settings, self.forbidden, text)
         # 没到模型这一步，直接把原因回给页面
         if plan.status != "ready":
             return json_response(test_result_payload(plan, "skip"))
@@ -462,7 +473,7 @@ class RulesPlugin(Star):
         return json_response({"message": message})
 
     def _register_log_pages(self) -> None:
-        """注册违禁日志只读接口。旧 AstrBot 没有这套 API 就跳过。"""
+        """注册违禁日志和名单接口。旧 AstrBot 没有这套 API 就跳过。"""
         register = getattr(self.context, "register_web_api", None)
         # 没这个方法说明当前 AstrBot 还不支持插件 Pages
         if not callable(register):
@@ -479,6 +490,30 @@ class RulesPlugin(Star):
             ["POST"],
             "违禁日志详情",
         )
+        register(
+            f"/{PLUGIN_NAME}/whitelist/add",
+            self.page_whitelist_add,
+            ["POST"],
+            "加入白名单",
+        )
+        register(
+            f"/{PLUGIN_NAME}/whitelist/remove",
+            self.page_whitelist_remove,
+            ["POST"],
+            "移出白名单",
+        )
+        register(
+            f"/{PLUGIN_NAME}/blacklist/add",
+            self.page_blacklist_add,
+            ["POST"],
+            "加入黑名单",
+        )
+        register(
+            f"/{PLUGIN_NAME}/blacklist/remove",
+            self.page_blacklist_remove,
+            ["POST"],
+            "移出黑名单",
+        )
 
     async def page_forbidden_log_list(self):
         """WebUI：按群、成员、原因过滤后分页列出日志。"""
@@ -488,7 +523,14 @@ class RulesPlugin(Star):
         # 不是对象就取不出筛选条件
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
-        return json_response(list_logs(self.forbidden_logs, payload))
+        return json_response(
+            list_logs(
+                self.forbidden_logs,
+                payload,
+                whitelist=self.whitelist,
+                blacklist=self.blacklist,
+            )
+        )
 
     async def page_forbidden_log_get(self):
         """WebUI：按 id 取一条原文。"""
@@ -498,10 +540,71 @@ class RulesPlugin(Star):
         # 不是对象就取不出 id
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
-        ok, result = get_log(self.forbidden_logs, payload)
+        ok, result = get_log(
+            self.forbidden_logs,
+            payload,
+            whitelist=self.whitelist,
+            blacklist=self.blacklist,
+        )
         # 没有这条用 404
         if not ok:
             return error_response(str(result), status_code=404)
+        return json_response(result)
+
+    async def page_whitelist_add(self):
+        """WebUI：把日志行上的人加入本群或全局白名单。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出群号和 QQ
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = await add_whitelist(self.whitelist, self.blacklist, payload)
+        # 号码不合法或范围不对用 400，页面直接展示原因
+        if not ok:
+            return error_response(str(result), status_code=400)
+        return json_response(result)
+
+    async def page_whitelist_remove(self):
+        """WebUI：把日志行上的人移出本群或全局白名单。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出群号和 QQ
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = await remove_whitelist(self.whitelist, self.blacklist, payload)
+        # 本来就不在这一张名单里用 400
+        if not ok:
+            return error_response(str(result), status_code=400)
+        return json_response(result)
+
+    async def page_blacklist_add(self):
+        """WebUI：把日志行上的人加入本群或全局黑名单。拉黑不踢人。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出群号和 QQ
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = await add_blacklist(self.whitelist, self.blacklist, payload)
+        # 号码不合法或范围不对用 400，页面直接展示原因
+        if not ok:
+            return error_response(str(result), status_code=400)
+        return json_response(result)
+
+    async def page_blacklist_remove(self):
+        """WebUI：把日志行上的人移出本群或全局黑名单。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出群号和 QQ
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = await remove_blacklist(self.whitelist, self.blacklist, payload)
+        # 本来就不在这一张名单里用 400
+        if not ok:
+            return error_response(str(result), status_code=400)
         return json_response(result)
 
     def _register_settings_pages(self) -> None:
@@ -644,7 +747,13 @@ class RulesPlugin(Star):
                 len(text),
             )
         handled, reply = await handle_group_card(
-            self.config, event, group_id, log_store=self.forbidden_logs
+            self.settings,
+            event,
+            group_id,
+            log_store=self.forbidden_logs,
+            whitelist=getattr(self, "whitelist", None),
+            blacklist=getattr(self, "blacklist", None),
+            mute_store=getattr(self, "forbidden_mutes", None),
         )
         # 当前群在 WebUI 名单里时，群名片直接违规，没有正文也要拦
         if handled:
@@ -671,13 +780,16 @@ class RulesPlugin(Star):
                 _stop_llm(event)
                 return
         handled, reply = await handle_forbidden_message(
-            self.config,
+            self.settings,
             self.forbidden,
             event,
             group_id,
             text,
             self._using_provider,
             log_store=self.forbidden_logs,
+            whitelist=getattr(self, "whitelist", None),
+            blacklist=getattr(self, "blacklist", None),
+            mute_store=getattr(self, "forbidden_mutes", None),
         )
 
         # 模型判定「是」后已经撤回/禁言/飞书。待验证的人发广告也要先走这里。
@@ -688,7 +800,7 @@ class RulesPlugin(Star):
             _stop_llm(event)
             return
         # 入群验证只认私聊交码，群消息不再当交码
-        reply = pick_reply(self.keywords, self.config, group_id, text)
+        reply = pick_reply(self.keywords, self.settings, group_id, text)
 
         # 没命中就静默放过，让消息继续走后面的流程
         if not reply:
@@ -795,15 +907,26 @@ class RulesPlugin(Star):
         user_id = _sender_id_of(event)
         prompt_id = self.verify.get_prompt_message_id(group_id, user_id)
         dropped = await drop_pending(self.verify, group_id, user_id)
-        # 本来就没有 pending，不用在群里说话
-        if not dropped:
-            return
-        await recall_message_id(event, prompt_id)
-        welcome = _welcome_text(self, group_id)
-        # 管理员在群里解禁，欢迎语也发回这个群，不进私聊
-        if welcome:
-            yield _join_at_text(event, user_id, welcome)
-        yield event.plain_result(PASS_REPLY)
+        # 有 pending 才算验证通过：先撤回入群提示，再发这一群的欢迎语，最后报通过
+        if dropped:
+            await recall_message_id(event, prompt_id)
+            welcome = _welcome_text(self, group_id)
+            # 管理员在群里解禁，欢迎语也发回这个群，不进私聊
+            if welcome:
+                yield _join_at_text(event, user_id, welcome)
+            yield event.plain_result(PASS_REPLY)
+
+
+        notice = await pardon_forbidden_mute(
+            getattr(self, "whitelist", None),
+            getattr(self, "blacklist", None),
+            getattr(self, "forbidden_mutes", None),
+            group_id,
+            user_id,
+        )
+        # 没有违禁禁言标记就不说话，避免把普通解禁当成加白
+        if notice:
+            yield event.plain_result(notice)
 
     @filter.llm_tool(name="blacklist_add")
     async def tool_blacklist_add(
@@ -812,7 +935,6 @@ class RulesPlugin(Star):
         """把一个人加入本群黑名单。只在管理员明确要求拉黑时调用。不踢人。
         写操作直接执行。最终回复如实转达工具结果。
 
-        Args:
             user_id(string): 要拉黑的 QQ 号，只填数字
         """
         return await _with_group(

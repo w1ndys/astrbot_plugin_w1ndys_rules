@@ -19,6 +19,7 @@ from ..entity.constants import (
 from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .qq_role import is_qq_group_staff
+from .whitelist import should_skip_forbidden, speaker_id
 
 async def handle_group_card(
     config: object,
@@ -26,6 +27,9 @@ async def handle_group_card(
     group_id: str,
     poster=None,
     log_store=None,
+    whitelist=None,
+    blacklist=None,
+    mute_store=None,
 ) -> tuple[bool, str]:
     """处理一条群名片。handled=True 时入口要停 LLM。
 
@@ -42,6 +46,11 @@ async def handle_group_card(
     if is_qq_group_staff(event):
         _log.info("[rules] group_card skip group=%s reason=staff", group_id)
         return False, ""
+
+    # 这一群或全局加了白且没被拉黑，群名片不处置
+    if should_skip_forbidden(whitelist, blacklist, group_id, speaker_id(event)):
+        _log.info("[rules] group_card skip group=%s reason=whitelist", group_id)
+        return False, ""
     _log.info("[rules] group_card hit group=%s", group_id)
     remind = await apply_hit_actions(
         event,
@@ -52,6 +61,7 @@ async def handle_group_card(
         poster,
         log_store,
         FORBIDDEN_REASON_GROUP_CARD,
+        mute_store=mute_store,
     )
     return True, remind
 

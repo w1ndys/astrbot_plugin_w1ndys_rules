@@ -182,7 +182,6 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         db_path = Path(self._tmp.name) / "rules.db"
         self.plugin = RulesPlugin.__new__(RulesPlugin)
         self.plugin.context = None
-        self.plugin.config = {}
         self.plugin.settings = {}
         self.plugin.keywords = KeywordStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
@@ -268,7 +267,7 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         await self.plugin.forbidden.add(
             FORBIDDEN_GLOBAL_SCOPE, FORBIDDEN_KIND_TRIGGER, "勤工俭学服务中心"
         )
-        self.plugin.config = {
+        self.plugin.settings = {
             FORBIDDEN_CFG_GUIDELINE: "广告算违禁。",
             FORBIDDEN_CFG_SAMPLES: "卖课 -> 是",
             FORBIDDEN_CFG_MUTE_SECONDS: 60,
