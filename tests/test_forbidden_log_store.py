@@ -1,5 +1,6 @@
-# 违禁日志数据层：插入、筛选分页、改原因不改原文、删除。
+# 违禁日志数据层：插入、筛选分页、改原因不改原文、删除；旧库补群昵称列。
 
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,21 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_REASON_GROUP_CARD,
     FORBIDDEN_REASON_MODEL,
 )
+
+# 本功能上线前的日志表结构：没有 sender_name 列，用来验证旧库补列
+OLD_TABLE_SQL = """
+CREATE TABLE forbidden_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    reason_text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    text TEXT NOT NULL,
+    json TEXT NOT NULL,
+    images TEXT NOT NULL
+)
+"""
 
 
 class ForbiddenLogStoreTest(unittest.IsolatedAsyncioTestCase):
@@ -49,6 +65,7 @@ class ForbiddenLogStoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.text, "这里有广告")
         self.assertEqual(row.json_text, "[]")
         self.assertEqual(row.images, "[]")
+        self.assertEqual(row.sender_name, "")
         self.assertTrue(row.created_at)
 
     async def test_list_filters_and_pages(self) -> None:
@@ -94,3 +111,41 @@ class ForbiddenLogStoreTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(await self.store.delete(log_id))
         self.assertIsNone(self.store.get(log_id))
+
+    def test_old_table_gains_sender_name_column(self) -> None:
+        """旧库没有群昵称列时补列，旧行读出空串而不是报错。"""
+        db_path = Path(self._tmp.name) / "old.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(OLD_TABLE_SQL)
+            conn.execute(
+                "INSERT INTO forbidden_log(group_id, user_id, reason_code, "
+                "reason_text, created_at, text, json, images) "
+                "VALUES ('1', '2', 'model', 'r', '2026-10-05 00:00:00', "
+                "'旧正文', '[]', '[]')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        store = ForbiddenLogStore(db_path)
+        row = store.get(1)
+        self.assertIsNotNone(row)
+        self.assertEqual(row.sender_name, "")
+        self.assertEqual(row.text, "旧正文")
+
+    async def test_insert_keeps_sender_name(self) -> None:
+        """命中写入的群昵称能读回来，详情和列表都带这一列。"""
+        log_id = await self.store.insert(
+            "123",
+            "10001",
+            FORBIDDEN_REASON_MODEL,
+            "文本模型命中",
+            "正文",
+            "[]",
+            "[]",
+            "小明",
+        )
+        row = self.store.get(log_id)
+        self.assertEqual(row.sender_name, "小明")
+        items, _total = self.store.list_page("123", "", "", 0, 10)
+        self.assertEqual(items[0].sender_name, "小明")
