@@ -1,56 +1,19 @@
-# 业务层：插件 Pages 全局配置。读写 schema 字段，含飞书 webhook。
-# 官方插件配置页字段全部 invisible，只在 Pages 改。
-
+# 业务层：插件 Pages 全局配置。校验通过后写进 rules.db 的 plugin_setting。
+# 官方插件配置页字段全部 invisible，只在 Pages 改；schema 只在空表时导入一次。
 
 from ..entity.constants import (
-    CFG_FORBIDDEN_GROUPS,
-    CFG_INVITE_GROUPS,
-    CFG_KEYWORD_GROUPS,
-    CFG_VERIFY_GROUPS,
-    CFG_WELCOME_GROUPS,
-    CFG_WELCOME_TEXT,
-    FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
-    FORBIDDEN_CFG_FEISHU_WEBHOOK,
-    FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_CFG_MUTE_SECONDS,
-    FORBIDDEN_CFG_REMIND_TEXT,
-    FORBIDDEN_CFG_SAMPLES,
-    FORBIDDEN_CFG_TRIGGER_GROUP,
-    FORBIDDEN_CFG_TRIGGER_PHONE,
-    FORBIDDEN_CFG_TRIGGER_QQ,
-    FORBIDDEN_CFG_TRIGGER_URL,
-    FORBIDDEN_CFG_TRIGGER_WECHAT,
-    VERIFY_CFG_MUTE_SECONDS,
+    SETTING_BOOL_KEYS,
+    SETTING_INT_KEYS,
+    SETTING_LIST_KEYS,
+    SETTING_TEXT_KEYS,
 )
 
-_LIST_KEYS = (
-    CFG_KEYWORD_GROUPS,
-    CFG_FORBIDDEN_GROUPS,
-    CFG_WELCOME_GROUPS,
-    CFG_VERIFY_GROUPS,
-    CFG_INVITE_GROUPS,
-    FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
-)
-_TEXT_KEYS = (
-    CFG_WELCOME_TEXT,
-    FORBIDDEN_CFG_GUIDELINE,
-    FORBIDDEN_CFG_SAMPLES,
-    FORBIDDEN_CFG_REMIND_TEXT,
-    FORBIDDEN_CFG_FEISHU_WEBHOOK,
-)
-
-_INT_KEYS = (
-    FORBIDDEN_CFG_MUTE_SECONDS,
-    VERIFY_CFG_MUTE_SECONDS,
-)
-_BOOL_KEYS = (
-    FORBIDDEN_CFG_TRIGGER_URL,
-    FORBIDDEN_CFG_TRIGGER_GROUP,
-    FORBIDDEN_CFG_TRIGGER_QQ,
-    FORBIDDEN_CFG_TRIGGER_PHONE,
-    FORBIDDEN_CFG_TRIGGER_WECHAT,
-)
-
+# 18 个配置键按存储类型分组，和 data/setting_store.py 编解码用的是同一份定义。
+# 名单按条添加，文本原样，整数是秒数，布尔是文本路规则开关。
+_LIST_KEYS = SETTING_LIST_KEYS
+_TEXT_KEYS = SETTING_TEXT_KEYS
+_INT_KEYS = SETTING_INT_KEYS
+_BOOL_KEYS = SETTING_BOOL_KEYS
 
 
 def get_settings(config: object) -> dict:
@@ -69,22 +32,17 @@ def get_settings(config: object) -> dict:
 
 
 
-def save_settings(config: object, payload: dict) -> tuple[bool, str]:
-    """写回 schema 字段。"""
-
-    # 没挂配置就写不回去
-    if config is None:
+async def save_settings(store, payload: dict) -> tuple[bool, str]:
+    """校验后写进 plugin_setting。没带的键不覆盖库里的旧值。"""
+    # 没挂配置存储就写不回去
+    if store is None:
         return False, "没有插件配置。"
     parsed, error = _parse_payload(payload)
     # 某一项不合法整份不写，避免写一半
     if error:
         return False, error
     for key, value in parsed.items():
-        _config_set(config, key, value)
-    saver = getattr(config, "save_config", None)
-    # 测试用的 dict 没有 save_config
-    if callable(saver):
-        saver()
+        await store.set_value(key, value)
     return True, "已保存。"
 
 
@@ -203,9 +161,4 @@ def _config_get(config: object, key: str):
     if not callable(getter):
         return None
     return getter(key)
-
-
-def _config_set(config: object, key: str, value: object) -> None:
-    """写一个配置字段。"""
-    config[key] = value
 
