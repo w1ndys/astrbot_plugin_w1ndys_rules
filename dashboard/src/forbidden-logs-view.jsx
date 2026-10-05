@@ -1,4 +1,5 @@
-// 页面层：违禁日志只读表。列表不展示原文。详情用 img 看图。
+// 页面层：违禁日志表。列表不展示原文，详情用 img 看图。
+// 每一行可以按本群或全局加白 / 拉黑；本群只影响该群，全局影响所有群，拉黑不踢人。
 
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography, message } from "antd";
@@ -10,6 +11,17 @@ const REASON_OPTIONS = [
   { value: "qrcode", label: "二维码" },
   { value: "image_model", label: "图片转写" },
 ];
+
+// 全局名单在库里的固定群号键，和后端 constants 一致。
+const GLOBAL_SCOPE = "global";
+
+// 四个接口路径，和后端 _register_log_pages 注册的地址一致。
+const ROSTER_PATHS = {
+  whitelist_add: "whitelist/add",
+  whitelist_remove: "whitelist/remove",
+  blacklist_add: "blacklist/add",
+  blacklist_remove: "blacklist/remove",
+};
 
 function renderPictures(pictures) {
   const items = pictures || [];
@@ -36,6 +48,26 @@ function renderJson(value) {
   return <p className="log-json">{text}</p>;
 }
 
+// 四个名单按钮。查的是这一行自己的四个状态，点了就加或移。
+function rosterActions(target, busy, onToggle) {
+  return (
+    <Space wrap>
+      <Button size="small" disabled={busy} onClick={() => onToggle(target, "whitelist", "group")}>
+        {target.whitelisted ? "移出本群白名单" : "加入本群白名单"}
+      </Button>
+      <Button size="small" disabled={busy} onClick={() => onToggle(target, "whitelist", GLOBAL_SCOPE)}>
+        {target.global_whitelisted ? "移出全局白名单" : "加入全局白名单"}
+      </Button>
+      <Button size="small" danger disabled={busy} onClick={() => onToggle(target, "blacklist", "group")}>
+        {target.group_blacklisted ? "移出本群黑名单" : "加入本群黑名单"}
+      </Button>
+      <Button size="small" danger disabled={busy} onClick={() => onToggle(target, "blacklist", GLOBAL_SCOPE)}>
+        {target.global_blacklisted ? "移出全局黑名单" : "加入全局黑名单"}
+      </Button>
+    </Space>
+  );
+}
+
 export function ForbiddenLogsView() {
   const [groupId, setGroupId] = useState("");
   const [userId, setUserId] = useState("");
@@ -51,6 +83,8 @@ export function ForbiddenLogsView() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
+  // 正在请求的那一行，键是「群号:QQ」，避免重复点
+  const [busyKey, setBusyKey] = useState("");
   const bridge = window.AstrBotPluginPage;
 
   const load = useCallback(
@@ -106,6 +140,37 @@ export function ForbiddenLogsView() {
     }
   }
 
+  // 加或移一个范围的名单。范围只按按钮决定，行号只用来带 QQ 和判断本群状态。
+  async function toggleRoster(target, kind, scope) {
+    const field = scope === GLOBAL_SCOPE
+      ? (kind === "whitelist" ? "global_whitelisted" : "global_blacklisted")
+      : (kind === "whitelist" ? "whitelisted" : "group_blacklisted");
+    const path = ROSTER_PATHS[kind + (target[field] ? "_remove" : "_add")];
+    setBusyKey(target.group_id + ":" + target.user_id);
+    try {
+      const result = await bridge.apiPost(path, {
+        group_id: scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : target.group_id,
+        user_id: target.user_id,
+        source_group_id: target.group_id,
+      });
+      message.success(result && result.message ? result.message : "已更新名单。");
+      await load(page, pageSize, applied);
+      if (detail && String(detail.id) === String(target.id)) {
+        setDetail({
+          ...detail,
+          whitelisted: Boolean(result && result.whitelisted),
+          global_whitelisted: Boolean(result && result.global_whitelisted),
+          group_blacklisted: Boolean(result && result.group_blacklisted),
+          global_blacklisted: Boolean(result && result.global_blacklisted),
+        });
+      }
+    } catch (error) {
+      const text = error && error.message ? error.message : String(error);
+      message.error(text);
+    }
+    setBusyKey("");
+  }
+
   const columns = [
     { title: "时间", dataIndex: "created_at", key: "created_at" },
     { title: "群号", dataIndex: "group_id", key: "group_id" },
@@ -115,9 +180,12 @@ export function ForbiddenLogsView() {
       title: "操作",
       key: "action",
       render: (_, row) => (
-        <Button type="link" onClick={() => openDetail(row)}>
-          查看
-        </Button>
+        <Space wrap>
+          <Button type="link" onClick={() => openDetail(row)}>
+            查看
+          </Button>
+          {rosterActions(row, busyKey === row.group_id + ":" + row.user_id, toggleRoster)}
+        </Space>
       ),
     },
   ];
@@ -125,7 +193,7 @@ export function ForbiddenLogsView() {
   return (
     <div>
       <Card title="违禁日志">
-        <p className="hint">只读。命中后才记。列表不看原文，点开一条才加载文本、卡片和图。飞书 webhook 不在这页。</p>
+        <p className="hint">命中后才记。列表不看原文，点开一条才加载文本、卡片和图。本群名单只对该群生效，全局名单对所有群生效，拉黑不踢人。飞书 webhook 不在这页。</p>
         <Space wrap style={{ marginBottom: 16 }}>
           <Input style={{ width: 160 }} placeholder="群号" value={groupId} onChange={(event) => setGroupId(event.target.value)} />
           <Input style={{ width: 160 }} placeholder="成员 QQ" value={userId} onChange={(event) => setUserId(event.target.value)} />
@@ -163,6 +231,8 @@ export function ForbiddenLogsView() {
             <Typography.Paragraph>原因：{detail.reason_text}</Typography.Paragraph>
             <Typography.Paragraph>时间：{detail.created_at}</Typography.Paragraph>
             <Typography.Paragraph>文本：{detail.text || "（空）"}</Typography.Paragraph>
+            <p className="hint">名单</p>
+            {rosterActions(detail, busyKey === detail.group_id + ":" + detail.user_id, toggleRoster)}
             <p className="hint">JSON 段</p>
             {renderJson(detail.json)}
             <p className="hint">图片</p>

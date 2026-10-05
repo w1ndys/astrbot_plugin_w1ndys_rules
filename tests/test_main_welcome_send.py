@@ -197,7 +197,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.invite = InviteStore(db_path)
         self.plugin.welcome = WelcomeStore(db_path)
-        self.plugin.config = {}
+        self.plugin.settings = {}
 
 
 
@@ -205,7 +205,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     async def test_increase_sends_at_and_text(self) -> None:
-        self.plugin.config = {
+        self.plugin.settings = {
             CFG_WELCOME_GROUPS: ["123"],
             CFG_WELCOME_TEXT: "请先看群规",
         }
@@ -227,7 +227,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_plain_group_message_ignored(self) -> None:
-        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_WELCOME_GROUPS: ["123"]}
 
         event = FakeEvent({"post_type": "message"})
         sent = await collect(self.plugin.on_group_increase(event))
@@ -236,7 +236,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_increase_without_saved_text_uses_default(self) -> None:
-        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_WELCOME_GROUPS: ["123"]}
 
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
@@ -244,7 +244,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent[0][1].text, "\n" + DEFAULT_WELCOME_TEXT)
 
     async def test_increase_verify_only_sends_code(self) -> None:
-        self.plugin.config = {CFG_VERIFY_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_VERIFY_GROUPS: ["123"]}
 
         event = FakeEvent({"notice_type": "group_increase"})
         sent = await collect(self.plugin.on_group_increase(event))
@@ -270,7 +270,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("私聊", str(event.bot.api.calls[1][1]["message"]))
 
     async def test_increase_welcome_and_verify_are_separate(self) -> None:
-        self.plugin.config = {
+        self.plugin.settings = {
             CFG_WELCOME_GROUPS: ["123"],
             CFG_VERIFY_GROUPS: ["123"],
             CFG_WELCOME_TEXT: "请先看群规",
@@ -346,7 +346,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
 
     async def test_increase_records_invite_edge(self) -> None:
-        self.plugin.config = {CFG_INVITE_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_INVITE_GROUPS: ["123"]}
 
         event = FakeEvent(
             {

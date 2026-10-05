@@ -16,6 +16,7 @@ from .forbidden_action import apply_hit_actions
 from .forbidden_image import handle_forbidden_images, message_has_image
 from .forbidden_judge import complete_yes_no, plan_forbidden_test
 from .qq_role import is_qq_group_staff, speaker_qq_role
+from .whitelist import should_skip_forbidden, speaker_id
 
 
 async def handle_forbidden_message(
@@ -30,6 +31,9 @@ async def handle_forbidden_message(
     decoder=None,
     transcribe=None,
     ocr=None,
+    whitelist=None,
+    blacklist=None,
+    mute_store=None,
 ) -> tuple[bool, str]:
     """处理一条群消息的违禁判断。handled=True 时入口要停 LLM。
 
@@ -49,6 +53,11 @@ async def handle_forbidden_message(
             speaker_qq_role(event),
         )
         return False, ""
+
+    # 这一群或全局加了白且没被拉黑，文本、OCR、二维码和群名片都不送模型
+    if should_skip_forbidden(whitelist, blacklist, group_id, speaker_id(event)):
+        _log.info("[rules] forbidden skip group=%s reason=whitelist", group_id)
+        return False, ""
     handled, remind = await handle_forbidden_images(
         event,
         config,
@@ -60,6 +69,7 @@ async def handle_forbidden_message(
         transcribe,
         ocr,
         store,
+        mute_store=mute_store,
     )
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:
@@ -74,6 +84,7 @@ async def handle_forbidden_message(
         get_provider,
         poster,
         log_store,
+        mute_store=mute_store,
     )
 
 
@@ -86,6 +97,7 @@ async def _handle_forbidden_text(
     get_provider,
     poster,
     log_store,
+    mute_store=None,
 ) -> tuple[bool, str]:
     """文本路：触发词、整句是。"""
     plan = plan_forbidden_test(config, store, text)
@@ -121,6 +133,7 @@ async def _handle_forbidden_text(
         log_store,
         FORBIDDEN_REASON_MODEL,
         judged.reason,
+        mute_store=mute_store,
     )
     _log.info("[rules] forbidden text hit group=%s trigger=%s", group_id, plan.trigger)
     return True, remind

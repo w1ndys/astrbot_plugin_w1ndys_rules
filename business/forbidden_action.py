@@ -428,12 +428,23 @@ async def apply_hit_actions(
     log_store=None,
     reason_code: str = "",
     judge_reason: str = "",
+    mute_store=None,
 ) -> str:
     """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。"""
     payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
     await recall_user_recent(event, group_id)
-    await mute_member(event, group_id, mute_seconds(config))
+    seconds = mute_seconds(config)
+    await mute_member(event, group_id, seconds)
+    user_id = sender_id_of(event)
+    # 记下这次违禁禁言，管理员解禁后才知道该给谁加白
+    if mute_store is not None:
+        # 秒数大于 0 才算真的禁了言
+        if seconds > 0:
+            await mute_store.mark(group_id, user_id)
+        else:
+            # 这次没禁言，上次留下的标记不能留着
+            await mute_store.clear(group_id, user_id)
     await notify_feishu(
         config, group_id, trigger, text, event, poster, judge_reason
     )

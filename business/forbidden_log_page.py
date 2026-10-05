@@ -1,11 +1,13 @@
-# 业务层：违禁日志只读页。不判断 QQ 权限，Pages 只给 AstrBot 管理员开。
+# 业务层：违禁日志页。不判断 QQ 权限，Pages 只给 AstrBot 管理员开。
 # 列表不回原文三列；详情按 id 取，图片只给 img 用的 src。
+# 每一行另外带四个名单状态，给页面上的白名单 / 黑名单按钮用。
 
 import json
 
 from ..data.forbidden_log_store import ForbiddenLogStore
 from ..entity.constants import FORBIDDEN_LOG_PAGE_SIZE
 from ..entity.forbidden_log import ForbiddenLog
+from .whitelist import roster_flags
 
 
 def _page_number(value: object, default: int) -> int:
@@ -20,7 +22,9 @@ def _page_number(value: object, default: int) -> int:
     return number
 
 
-def list_logs(store: ForbiddenLogStore, payload: dict) -> dict:
+def list_logs(
+    store: ForbiddenLogStore, payload: dict, whitelist=None, blacklist=None
+) -> dict:
     """按群、用户、原因过滤后分页。列表不含 text / json / images。"""
     group_id = str(payload.get("group_id") or "").strip()
     user_id = str(payload.get("user_id") or "").strip()
@@ -35,7 +39,7 @@ def list_logs(store: ForbiddenLogStore, payload: dict) -> dict:
     )
     rows = []
     for item in items:
-        rows.append(_list_row(item))
+        rows.append(_list_row(item, whitelist, blacklist))
     return {
         "items": rows,
         "total": total,
@@ -44,7 +48,9 @@ def list_logs(store: ForbiddenLogStore, payload: dict) -> dict:
     }
 
 
-def get_log(store: ForbiddenLogStore, payload: dict) -> tuple[bool, object]:
+def get_log(
+    store: ForbiddenLogStore, payload: dict, whitelist=None, blacklist=None
+) -> tuple[bool, object]:
     """按 id 取详情。没有这条返回 False 和原因。"""
     try:
         log_id = int(payload.get("id"))
@@ -57,12 +63,12 @@ def get_log(store: ForbiddenLogStore, payload: dict) -> tuple[bool, object]:
     # 这个 id 还没写过
     if item is None:
         return False, "没有这条日志。"
-    return True, _detail_row(item)
+    return True, _detail_row(item, whitelist, blacklist)
 
 
-def _list_row(item: ForbiddenLog) -> dict:
+def _list_row(item: ForbiddenLog, whitelist, blacklist) -> dict:
     """列表行。不带原文，避免把 base64 和完整 JSON 送到表格。"""
-    return {
+    row = {
         "id": item.id,
         "group_id": item.group_id,
         "user_id": item.user_id,
@@ -70,11 +76,14 @@ def _list_row(item: ForbiddenLog) -> dict:
         "reason_text": item.reason_text,
         "created_at": item.created_at,
     }
+    # 四个按钮状态按这一行的群号和 QQ 算，没传存储时都是 False
+    row.update(roster_flags(whitelist, blacklist, item.group_id, item.user_id))
+    return row
 
 
-def _detail_row(item: ForbiddenLog) -> dict:
+def _detail_row(item: ForbiddenLog, whitelist, blacklist) -> dict:
     """详情。图片只给 src，失败不含 data。"""
-    return {
+    row = {
         "id": item.id,
         "group_id": item.group_id,
         "user_id": item.user_id,
@@ -85,6 +94,9 @@ def _detail_row(item: ForbiddenLog) -> dict:
         "json": _parse_json_field(item.json_text),
         "pictures": _parse_pictures(item.images),
     }
+    # 抽屉里的按钮状态和列表行用同一对号码
+    row.update(roster_flags(whitelist, blacklist, item.group_id, item.user_id))
+    return row
 
 
 def _parse_json_field(raw: str) -> object:

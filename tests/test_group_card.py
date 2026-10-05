@@ -15,8 +15,11 @@ from astrbot_plugin_w1ndys_rules.business.group_card import (
     handle_group_card,
     is_group_card,
 )
+from astrbot_plugin_w1ndys_rules.data.blacklist_store import BlacklistStore
 from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
+from astrbot_plugin_w1ndys_rules.data.whitelist_store import WhitelistStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
+    BLACKLIST_GLOBAL_SCOPE,
     FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
@@ -180,3 +183,42 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_GROUP_CARD)
         self.assertEqual(items[0].text, "")
         self.assertIn("群名片", items[0].json_text)
+
+    async def test_whitelist_skips_until_blacklisted(self) -> None:
+        """本群或全局白名单都不处置；再写入任一范围黑名单后不再跳过。"""
+        tmp = tempfile.TemporaryDirectory()
+        db_path = Path(tmp.name) / "rules.db"
+        whitelist = WhitelistStore(db_path)
+        blacklist = BlacklistStore(db_path)
+        await whitelist.add("123", "10001")
+        event = FakeEvent([Json(GROUP_CARD)])
+        handled, reply = await handle_group_card(
+            on_config(), event, "123", whitelist=whitelist, blacklist=blacklist
+        )
+        self.assertFalse(handled)
+        self.assertEqual(reply, "")
+        self.assertEqual(event.bot.api.calls, [])
+
+        # 全局白名单同样让本群跳过
+        await whitelist.remove("123", "10001")
+        await whitelist.add(BLACKLIST_GLOBAL_SCOPE, "10001")
+        global_event = FakeEvent([Json(GROUP_CARD)])
+        handled, _reply = await handle_group_card(
+            on_config(),
+            global_event,
+            "123",
+            whitelist=whitelist,
+            blacklist=blacklist,
+        )
+        self.assertFalse(handled)
+        self.assertEqual(global_event.bot.api.calls, [])
+
+        # 任一范围黑名单压过白名单，还是要处置
+        await blacklist.add("123", "10001")
+        hit = FakeEvent([Json(GROUP_CARD)])
+        handled, _reply = await handle_group_card(
+            on_config(), hit, "123", whitelist=whitelist, blacklist=blacklist
+        )
+        tmp.cleanup()
+        self.assertTrue(handled)
+        self.assertIn("delete_msg", [name for name, _kwargs in hit.bot.api.calls])
