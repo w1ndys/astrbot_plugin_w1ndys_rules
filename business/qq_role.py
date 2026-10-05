@@ -1,5 +1,6 @@
-# 业务层：从 OneBot 原始消息读发言人在本群的角色。
+# 业务层：从 OneBot 原始消息读发言人在本群的角色和群昵称。
 # AstrBot 的 MessageMember 没有 role，不能问 event.sender.role。
+# 群昵称也从同一个 sender 读：群名片优先，其次 QQ 昵称。
 
 from ..entity.constants import QQ_ROLE_ADMIN, QQ_ROLE_OWNER
 
@@ -30,6 +31,31 @@ def is_qq_group_staff(event: object) -> bool:
     return False
 
 
+def speaker_display_name(event: object) -> str:
+    """取发言人在本群的展示名，写进违禁日志的 sender_name 列。"""
+    obj = getattr(event, "message_obj", None)
+    # 没有消息对象就读不到 sender
+    if obj is None:
+        return ""
+    raw = getattr(obj, "raw_message", None)
+    # 测试页和残缺事件没有 raw_message
+    if raw is None:
+        return ""
+    return _display_name_of(_sender_of(raw))
+
+
+def _display_name_of(sender: object) -> str:
+    """从 sender 取群昵称：群名片优先，其次 QQ 昵称，都空就是空串。"""
+    # 原始消息里没有 sender
+    if sender is None:
+        return ""
+    card = _field_of(sender, "card").strip()
+    # 群名片是成员在本群的展示名，优先用它
+    if card:
+        return card
+    return _field_of(sender, "nickname").strip()
+
+
 def _sender_of(raw: object) -> object:
     """从 OneBot Event 或 dict 里取出 sender。"""
     sender = getattr(raw, "sender", None)
@@ -48,7 +74,12 @@ def _role_of(sender: object) -> str:
     # 原始消息里没有 sender
     if sender is None:
         return ""
+    return _field_of(sender, "role")
+
+
+def _field_of(sender: object, key: str) -> str:
+    """从 sender 取一个字符串字段。dict 走 get，对象走属性。"""
     # OneBot sender 一般是 dict
     if isinstance(sender, dict):
-        return str(sender.get("role") or "")
-    return str(getattr(sender, "role", "") or "")
+        return str(sender.get(key) or "")
+    return str(getattr(sender, key, "") or "")

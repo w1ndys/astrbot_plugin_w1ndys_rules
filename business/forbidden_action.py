@@ -25,6 +25,7 @@ from ..entity.constants import (
 )
 from .forbidden_judge import config_text
 from .forbidden_log import save_hit_log, take_payload
+from .qq_role import speaker_display_name
 
 
 def mute_seconds(config: object) -> int:
@@ -448,6 +449,8 @@ async def apply_hit_actions(
     await notify_feishu(
         config, group_id, trigger, text, event, poster, judge_reason
     )
+    # 命中当时的群昵称，和这条日志一起存；读不到就是空串
+    sender_name = speaker_display_name(event)
     await save_hit_log(
         log_store,
         group_id,
@@ -456,6 +459,7 @@ async def apply_hit_actions(
         trigger,
         payload,
         judge_reason,
+        sender_name,
     )
     return remind_text(config)
 

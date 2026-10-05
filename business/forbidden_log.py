@@ -75,8 +75,9 @@ async def save_hit_log(
     trigger: str,
     payload: tuple[str, str, str] | None,
     judge_reason: str = "",
+    sender_name: str = "",
 ) -> None:
-    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。"""
+    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。sender_name 是命中当时的群昵称，读不到传空串。"""
     # 没采集就表示这次不记
     if payload is None:
         return
@@ -96,6 +97,7 @@ async def save_hit_log(
             text,
             json_text,
             images,
+            sender_name,
         )
     except Exception:  # noqa: BLE001 - 写库失败不能回滚撤回禁言
         # 处置已经发生，缺这条日志以后再补
