@@ -25,6 +25,7 @@ from ..entity.constants import (
 )
 from .forbidden_judge import config_text
 from .forbidden_log import save_hit_log, take_payload
+from .qq_role import speaker_display_name
 
 
 def mute_seconds(config: object) -> int:
@@ -429,8 +430,9 @@ async def apply_hit_actions(
     reason_code: str = "",
     judge_reason: str = "",
     mute_store=None,
-) -> str:
-    """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。"""
+    log_text: str | None = None,
+    ) -> str:
+    """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。log_text 只在模型命中时传，日志文本用它。"""
     payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
     await recall_user_recent(event, group_id)
@@ -448,6 +450,8 @@ async def apply_hit_actions(
     await notify_feishu(
         config, group_id, trigger, text, event, poster, judge_reason
     )
+    # 命中当时的群昵称，和这条日志一起存；读不到就是空串
+    sender_name = speaker_display_name(event)
     await save_hit_log(
         log_store,
         group_id,
@@ -456,6 +460,8 @@ async def apply_hit_actions(
         trigger,
         payload,
         judge_reason,
+        sender_name,
+        log_text,
     )
     return remind_text(config)
 

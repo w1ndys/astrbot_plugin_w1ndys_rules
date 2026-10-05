@@ -336,11 +336,11 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_yes_writes_log(self) -> None:
-        """模型说「是」才落日志，text 用 message_str。"""
+        """模型说「是」才落日志，text 存送审用户文本而不是外层 message_str。"""
         tmp = tempfile.TemporaryDirectory()
         store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
         event = FakeEvent()
-        event.message_str = "这里有广告"
+        event.message_str = "  这里有广告  "
         handled, _reply = await handle_forbidden_message(
             ready_config(**{FORBIDDEN_CFG_FEISHU_WEBHOOK: ""}),
             FakeForbiddenStore(),
@@ -355,7 +355,11 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
         tmp.cleanup()
         self.assertEqual(total, 1)
         self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_MODEL)
+        # 日志文本是送审用户文本，不是外层 message_str
         self.assertEqual(items[0].text, "这里有广告")
+        self.assertNotEqual(items[0].text, event.message_str)
+        # 系统提示和样本不进日志
+        self.assertNotIn("你是群规违禁判断器", items[0].text)
         self.assertEqual(items[0].user_id, "10001")
 
     async def test_skip_does_not_write_log(self) -> None:
@@ -494,3 +498,29 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
             return FakeProvider(text)
 
         return get_provider
+
+    async def test_feishu_message_equals_log_text(self) -> None:
+        """模型命中时飞书「消息」正文和这条日志的文本是同一份送审文本。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        posted: list[tuple[str, dict]] = []
+
+        def poster(url: str, body: dict) -> None:
+            posted.append((url, body))
+
+        event = FakeEvent()
+        event.message_str = "  这里有广告  "
+        await handle_forbidden_message(
+            ready_config(),
+            FakeForbiddenStore(),
+            event,
+            "123",
+            "这里有广告",
+            self._provider("是"),
+            poster,
+            log_store=store,
+        )
+        items, _total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        feishu = posted[0][1]["content"]["text"]
+        self.assertIn(f"消息：{items[0].text}", feishu)

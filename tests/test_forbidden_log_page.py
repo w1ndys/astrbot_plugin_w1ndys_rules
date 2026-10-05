@@ -33,6 +33,7 @@ class ForbiddenLogPageTest(unittest.IsolatedAsyncioTestCase):
             "这里有广告",
             json.dumps([{"prompt": "群名片"}], ensure_ascii=False),
             json.dumps([{"ok": True, "data": "abc"}], ensure_ascii=False),
+            "小明",
         )
         data = list_logs(self.store, {"page": 1, "page_size": 20})
         self.assertEqual(data["total"], 1)
@@ -42,6 +43,7 @@ class ForbiddenLogPageTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("images", row)
         self.assertNotIn("pictures", row)
         self.assertEqual(row["group_id"], "123")
+        self.assertEqual(row["sender_name"], "小明")
 
     async def test_detail_pictures_use_src(self) -> None:
         log_id = await self.store.insert(
@@ -59,6 +61,8 @@ class ForbiddenLogPageTest(unittest.IsolatedAsyncioTestCase):
         ok, detail = get_log(self.store, {"id": log_id})
         self.assertTrue(ok)
         self.assertEqual(detail["text"], "这里有广告")
+        # 详情也要带群昵称，旧日志读出来是空串
+        self.assertEqual(detail["sender_name"], "")
         self.assertEqual(detail["pictures"][0]["ok"], True)
         self.assertTrue(detail["pictures"][0]["src"].startswith("data:image/png;base64,"))
         self.assertNotIn("data", detail["pictures"][0])

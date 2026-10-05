@@ -80,14 +80,15 @@ class FakeBot:
 
 
 class FakeMessage:
-    def __init__(self, message_id=123) -> None:
+    def __init__(self, message_id=123, sender=None) -> None:
         self.message_id = message_id
-
+        # 群消息的发送人资料；没有就当作读不到群昵称
+        self.raw_message = None if sender is None else {"sender": sender}
 
 class FakeEvent:
-    def __init__(self, text: str = "", messages=None) -> None:
+    def __init__(self, text: str = "", messages=None, sender=None) -> None:
         self.bot = FakeBot()
-        self.message_obj = FakeMessage()
+        self.message_obj = FakeMessage(sender=sender)
         self.message_str = text
         self._messages = messages or []
 
@@ -164,6 +165,24 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
+    async def _hit(self, event, log_text=None) -> None:
+        """按文本模型命中跑一次处置，只关心写进库的那条日志。"""
+        await apply_hit_actions(
+            event,
+            {FORBIDDEN_CFG_MUTE_SECONDS: 0},
+            "123",
+            "广告",
+            "这里有广告",
+            log_store=self.store,
+            reason_code=FORBIDDEN_REASON_MODEL,
+            log_text=log_text,
+        )
+
+    def _last_row(self):
+        """最新一条日志。三条昵称用例都只看这一行。"""
+        items, _total = self.store.list_page("", "", "", 0, 10)
+        return items[0]
+
     async def test_hit_writes_message_str_not_model_prompt(self) -> None:
         """飞书仍用传入 text，日志 text 列用 message_str。"""
         event = FakeEvent("这里有广告", [Json({"a": 1})])
@@ -200,3 +219,34 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
         actions = [name for name, _kwargs in event.bot.api.calls]
         self.assertEqual(actions, ["delete_msg", "get_group_msg_history"])
 
+
+    async def test_hit_records_sender_name(self) -> None:
+        """命中写日志带上当次群昵称，群名片优先。"""
+        await self._hit(FakeEvent("这里有广告", sender={"card": "小明", "nickname": "nick"}))
+        self.assertEqual(self._last_row().sender_name, "小明")
+
+    async def test_hit_uses_nickname_without_card(self) -> None:
+        """群名片为空时记 QQ 昵称。"""
+        await self._hit(FakeEvent("这里有广告", sender={"nickname": "nick"}))
+        self.assertEqual(self._last_row().sender_name, "nick")
+
+    async def test_each_hit_keeps_its_own_name(self) -> None:
+        """同一人换昵称再命中，只写新日志，旧日志里的昵称不动。"""
+        await self._hit(FakeEvent("这里有广告", sender={"card": "小明"}))
+        await self._hit(FakeEvent("这里有广告", sender={"card": "小刚"}))
+        items, total = self.store.list_page("", "", "", 0, 10)
+        self.assertEqual(total, 2)
+        self.assertEqual(items[0].sender_name, "小刚")
+        self.assertEqual(items[1].sender_name, "小明")
+
+    async def test_log_text_overrides_message_str(self) -> None:
+        """模型命中传了用户文本时，text 存这份文本而不是外层 message_str。"""
+        event = FakeEvent("外层转发文本")
+        await self._hit(event, log_text="送给模型的用户文本")
+        self.assertEqual(self._last_row().text, "送给模型的用户文本")
+
+    async def test_empty_log_text_stays_empty(self) -> None:
+        """送审用户文本为空时 text 存空串，不回退到 message_str。"""
+        event = FakeEvent("外层转发文本")
+        await self._hit(event, log_text="")
+        self.assertEqual(self._last_row().text, "")

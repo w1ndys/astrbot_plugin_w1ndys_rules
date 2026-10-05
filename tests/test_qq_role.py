@@ -1,4 +1,4 @@
-# OneBot 原始消息里的群角色。读不到就当普通群员。
+# OneBot 原始消息里的群角色和群昵称。读不到就当普通群员、昵称留空。
 
 import sys
 import unittest
@@ -12,6 +12,7 @@ if PARENT not in sys.path:
 
 from astrbot_plugin_w1ndys_rules.business.qq_role import (
     is_qq_group_staff,
+    speaker_display_name,
     speaker_qq_role,
 )
 
@@ -67,3 +68,23 @@ class QqRoleTest(unittest.TestCase):
     def test_object_sender_role(self) -> None:
         event = FakeEvent(RawWithSenderAttr(SenderObj("owner")))
         self.assertTrue(is_qq_group_staff(event))
+
+    def test_display_name_prefers_card(self) -> None:
+        """群名片优先于 QQ 昵称。"""
+        event = FakeEvent({"sender": {"card": "小明", "nickname": "nick"}})
+        self.assertEqual(speaker_display_name(event), "小明")
+
+    def test_display_name_falls_back_to_nickname(self) -> None:
+        """群名片为空或只有空白时用 QQ 昵称。"""
+        event = FakeEvent({"sender": {"card": "   ", "nickname": "nick"}})
+        self.assertEqual(speaker_display_name(event), "nick")
+
+    def test_display_name_empty_when_both_blank(self) -> None:
+        """名片和昵称都没有时返回空串，处置照常继续。"""
+        event = FakeEvent({"sender": {"card": "", "nickname": ""}})
+        self.assertEqual(speaker_display_name(event), "")
+
+    def test_display_name_without_sender(self) -> None:
+        """没有消息对象或原始消息里没有 sender，都返回空串。"""
+        self.assertEqual(speaker_display_name(FakeEvent(has_obj=False)), "")
+        self.assertEqual(speaker_display_name(FakeEvent({"post_type": "message"})), "")

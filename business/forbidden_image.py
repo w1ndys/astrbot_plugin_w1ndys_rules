@@ -133,6 +133,8 @@ async def handle_forbidden_images(
         FORBIDDEN_REASON_IMAGE_MODEL,
         judged.reason,
         mute_store=mute_store,
+        # 图片转写命中也存送审用户文本（含转写正文），和飞书「消息」同一份
+        log_text=plan.user,
     )
     _log.info("[rules] image model hit group=%s", group_id)
     return True, remind

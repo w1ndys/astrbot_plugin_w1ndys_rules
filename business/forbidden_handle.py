@@ -134,6 +134,8 @@ async def _handle_forbidden_text(
         FORBIDDEN_REASON_MODEL,
         judged.reason,
         mute_store=mute_store,
+        # 日志文本存这份送审用户文本，和飞书「消息」正文是同一份
+        log_text=plan.user,
     )
     _log.info("[rules] forbidden text hit group=%s trigger=%s", group_id, plan.trigger)
     return True, remind

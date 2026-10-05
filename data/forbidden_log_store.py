@@ -2,6 +2,7 @@
 #
 # 日志会一直增长，不能像关键词那样整表进内存。读写都走 SQLite。
 # 原文三列（text / json / images）更新接口默认不能改，避免详情被改掉。
+# 群昵称（sender_name）是命中那一刻的快照，只在这张表里读写；回补只填空值。
 
 import asyncio
 from datetime import datetime
@@ -23,7 +24,8 @@ CREATE TABLE IF NOT EXISTS forbidden_log (
     created_at TEXT NOT NULL,
     text TEXT NOT NULL,
     json TEXT NOT NULL,
-    images TEXT NOT NULL
+    images TEXT NOT NULL,
+    sender_name TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -44,14 +46,32 @@ class ForbiddenLogStore:
         self._setup()
 
     def _setup(self) -> None:
-        """首次启动时建表和筛选索引。已存在就跳过。"""
+        """首次启动时建表和筛选索引。旧库补群昵称列。已存在就跳过。"""
         conn = connect(self.db_path)
         try:
             create_table(conn, CREATE_TABLE_SQL)
+            self._ensure_sender_name_column(conn)
             conn.execute(CREATE_INDEX_SQL)
             conn.commit()
         finally:
             conn.close()
+
+    def _table_columns(self, conn: object) -> list[str]:
+        """当前日志表有哪些列。给旧库补列用。"""
+        rows = conn.execute("PRAGMA table_info(forbidden_log)").fetchall()
+        return [str(row[1]) for row in rows]
+
+    def _ensure_sender_name_column(self, conn: object) -> None:
+        """旧表没有群昵称列时补上，默认空串，避免读这一列失败。"""
+        names = self._table_columns(conn)
+        # 新库建表时已经有这一列，不用再改
+        if "sender_name" in names:
+            return
+        conn.execute(
+            "ALTER TABLE forbidden_log "
+            "ADD COLUMN sender_name TEXT NOT NULL DEFAULT ''"
+        )
+        conn.commit()
 
     async def insert(
         self,
@@ -62,8 +82,9 @@ class ForbiddenLogStore:
         text: str,
         json_text: str,
         images: str,
+        sender_name: str = "",
     ) -> int:
-        """写入一条命中日志，返回自增 id。"""
+        """写入一条命中日志，返回自增 id。sender_name 是命中当时的群昵称，回补只填空值。"""
         async with self._lock:
             return await asyncio.to_thread(
                 self._insert_sync,
@@ -74,6 +95,7 @@ class ForbiddenLogStore:
                 text,
                 json_text,
                 images,
+                sender_name,
             )
 
     def get(self, log_id: int) -> ForbiddenLog | None:
@@ -82,7 +104,8 @@ class ForbiddenLogStore:
         try:
             row = conn.execute(
                 "SELECT id, group_id, user_id, reason_code, reason_text, "
-                "created_at, text, json, images FROM forbidden_log WHERE id = ?",
+                "created_at, text, json, images, sender_name FROM forbidden_log "
+                "WHERE id = ?",
                 (log_id,),
             ).fetchone()
         finally:
@@ -114,7 +137,7 @@ class ForbiddenLogStore:
             ).fetchone()
             rows = conn.execute(
                 "SELECT id, group_id, user_id, reason_code, reason_text, "
-                "created_at, text, json, images FROM forbidden_log"
+                "created_at, text, json, images, sender_name FROM forbidden_log"
                 + where_sql
                 + " ORDER BY id DESC LIMIT ? OFFSET ?",
                 args + [limit, offset],
@@ -126,6 +149,21 @@ class ForbiddenLogStore:
         for row in rows:
             items.append(_row_to_log(row))
         return items, total
+
+    def groups_with_empty_sender_name(self) -> list[str]:
+        """还留着空群昵称的群号，去重后按群号排。回补按这份清单逐群拉成员。"""
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT group_id FROM forbidden_log "
+                "WHERE sender_name = '' ORDER BY group_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        groups = []
+        for row in rows:
+            groups.append(str(row[0]))
+        return groups
 
     async def update_reason(
         self, log_id: int, reason_code: str, reason_text: str
@@ -140,6 +178,13 @@ class ForbiddenLogStore:
         """按 id 删一条。没有这条返回 False。HTTP 这一版不挂。"""
         async with self._lock:
             return await asyncio.to_thread(self._delete_sync, log_id)
+
+    async def backfill_sender_names(self, group_id: str, names: dict) -> int:
+        """把这一群里还空着的群昵称填上，返回写入条数。已有昵称的行不改。"""
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._backfill_sender_names_sync, group_id, names
+            )
 
     def _count(self, where_sql: str, args: list) -> int:
         """按同一套筛选条件数总数。"""
@@ -164,6 +209,7 @@ class ForbiddenLogStore:
         text: str,
         json_text: str,
         images: str,
+        sender_name: str = "",
     ) -> int:
         """同步插入，给 to_thread 用。时间用北京时间。"""
         stamp = datetime.now(_BEIJING).strftime("%Y-%m-%d %H:%M:%S")
@@ -172,7 +218,8 @@ class ForbiddenLogStore:
             cur = conn.execute(
                 "INSERT INTO forbidden_log("
                 "group_id, user_id, reason_code, reason_text, created_at, "
-                "text, json, images) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "text, json, images, sender_name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     group_id,
                     user_id,
@@ -182,6 +229,7 @@ class ForbiddenLogStore:
                     text,
                     json_text,
                     images,
+                    sender_name,
                 ),
             )
             conn.commit()
@@ -212,6 +260,29 @@ class ForbiddenLogStore:
             cur = conn.execute("DELETE FROM forbidden_log WHERE id = ?", (log_id,))
             conn.commit()
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def _backfill_sender_names_sync(self, group_id: str, names: dict) -> int:
+        """同步只填空群昵称，给 to_thread 用。已有昵称的行不动。"""
+        # 没拿到成员资料就没什么可填
+        if not names:
+            return 0
+        written = 0
+        conn = connect(self.db_path)
+        try:
+            for user_id, sender_name in names.items():
+                # 空值不能写进去，否则下次回补还要再处理一遍
+                if not sender_name:
+                    continue
+                cur = conn.execute(
+                    "UPDATE forbidden_log SET sender_name = ? "
+                    "WHERE group_id = ? AND user_id = ? AND sender_name = ''",
+                    (sender_name, group_id, user_id),
+                )
+                written += cur.rowcount
+            conn.commit()
+            return written
         finally:
             conn.close()
 
@@ -253,4 +324,5 @@ def _row_to_log(row: tuple) -> ForbiddenLog:
         str(row[6]),
         str(row[7]),
         str(row[8]),
+        str(row[9]),
     )
