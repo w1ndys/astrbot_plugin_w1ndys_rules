@@ -42,3 +42,22 @@ class ForbiddenLogsRosterSourceTest(unittest.TestCase):
         self.assertIn("/whitelist/remove", source)
         self.assertIn("/blacklist/add", source)
         self.assertIn("/blacklist/remove", source)
+
+
+class ForbiddenLogsNameSourceTest(unittest.TestCase):
+    """源码约定：群名读共享映射，群昵称来自日志，回补走新接口。"""
+
+    def test_view_reads_shared_group_name_map(self) -> None:
+        js = (SRC / "forbidden-logs-view.jsx").read_text()
+        self.assertIn("群名", js)
+        self.assertIn("群昵称", js)
+        self.assertIn("group-name/list", js)
+        self.assertIn("forbidden-log/backfill-nicknames", js)
+        # 日志页不另存群名，也不在这里拉群列表
+        self.assertNotIn("group-name/save", js)
+        self.assertNotIn("group-name/pull", js)
+
+    def test_main_registers_backfill_path(self) -> None:
+        """入口注册的回补地址和页面写的一致，否则按钮会打到 404。"""
+        source = (ROOT / "main.py").read_text()
+        self.assertIn("/forbidden-log/backfill-nicknames", source)

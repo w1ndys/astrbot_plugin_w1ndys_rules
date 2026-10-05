@@ -1,4 +1,5 @@
 // 页面层：违禁日志表。列表不展示原文，详情用 img 看图。
+// 群名读已有的群名映射；群昵称是命中时存下的快照，旧日志可在页面上手动回补一次。
 // 每一行可以按本群或全局加白 / 拉黑；本群只影响该群，全局影响所有群，拉黑不踢人。
 
 import { useCallback, useEffect, useState } from "react";
@@ -67,6 +68,19 @@ function rosterActions(target, busy, onToggle) {
     </Space>
   );
 }
+// 群名映射对照群号：没保存过的群显示空字符串，群号仍然照显示。
+function itemsToNameMap(items) {
+  const map = {};
+  for (const item of items || []) {
+    const groupId = String(item.group_id || "").trim();
+    // 空群号对不上日志行
+    if (!groupId) {
+      continue;
+    }
+    map[groupId] = String(item.group_name || "").trim();
+  }
+  return map;
+}
 
 export function ForbiddenLogsView() {
   const [groupId, setGroupId] = useState("");
@@ -85,6 +99,8 @@ export function ForbiddenLogsView() {
   const [detail, setDetail] = useState(null);
   // 正在请求的那一行，键是「群号:QQ」，避免重复点
   const [busyKey, setBusyKey] = useState("");
+  // 群号到群名的映射，和欢迎语、关键词页读的是同一份
+  const [names, setNames] = useState({});
   const bridge = window.AstrBotPluginPage;
 
   const load = useCallback(
@@ -122,7 +138,20 @@ export function ForbiddenLogsView() {
       if (cancelled) {
         return;
       }
-      await load(1, 20, { group_id: "", user_id: "", reason_code: "" });
+      try {
+        const mapped = await bridge.apiPost("group-name/list", {});
+        // 切走后丢掉映射结果
+        if (!cancelled) {
+          setNames(itemsToNameMap(mapped.items));
+        }
+      } catch (error) {
+        const text = error && error.message ? error.message : String(error);
+        message.error(text);
+      }
+      // 映射失败也要把日志表拉出来
+      if (!cancelled) {
+        await load(1, 20, { group_id: "", user_id: "", reason_code: "" });
+      }
     }
     boot();
     return () => {
@@ -171,10 +200,29 @@ export function ForbiddenLogsView() {
     setBusyKey("");
   }
 
+  // 手动回补空群昵称：只填空值，数据来自当前群成员资料。页面加载时不自动跑。
+  async function backfillNicknames() {
+    try {
+      const result = await bridge.apiPost("forbidden-log/backfill-nicknames", {});
+      message.success(result && result.message ? result.message : "已回补群昵称。");
+      await load(page, pageSize, applied);
+    } catch (error) {
+      const text = error && error.message ? error.message : String(error);
+      message.error(text);
+    }
+  }
+
   const columns = [
     { title: "时间", dataIndex: "created_at", key: "created_at" },
     { title: "群号", dataIndex: "group_id", key: "group_id" },
+    {
+      title: "群名",
+      key: "group_name",
+      // 映射里没有这个群号就显示空，群号照显示
+      render: (_, row) => names[String(row.group_id)] || "",
+    },
     { title: "成员", dataIndex: "user_id", key: "user_id" },
+    { title: "群昵称", dataIndex: "sender_name", key: "sender_name" },
     { title: "原因", dataIndex: "reason_text", key: "reason_text" },
     {
       title: "操作",
@@ -193,7 +241,7 @@ export function ForbiddenLogsView() {
   return (
     <div>
       <Card title="违禁日志">
-        <p className="hint">命中后才记。列表不看原文，点开一条才加载文本、卡片和图。本群名单只对该群生效，全局名单对所有群生效，拉黑不踢人。飞书 webhook 不在这页。</p>
+        <p className="hint">命中后才记。列表不看原文，点开一条才加载文本、卡片和图。群名读群名映射，群昵称是命中时存下来的，旧日志可以用「回补群昵称」按当前群成员资料补一次。本群名单只对该群生效，全局名单对所有群生效，拉黑不踢人。飞书 webhook 不在这页。</p>
         <Space wrap style={{ marginBottom: 16 }}>
           <Input style={{ width: 160 }} placeholder="群号" value={groupId} onChange={(event) => setGroupId(event.target.value)} />
           <Input style={{ width: 160 }} placeholder="成员 QQ" value={userId} onChange={(event) => setUserId(event.target.value)} />
@@ -211,6 +259,7 @@ export function ForbiddenLogsView() {
           >
             筛选
           </Button>
+          <Button onClick={backfillNicknames}>回补群昵称</Button>
         </Space>
         <Table rowKey={(row) => String(row.id)} columns={columns} dataSource={items} loading={loading} pagination={false} />
         <div className="pager">
@@ -227,7 +276,9 @@ export function ForbiddenLogsView() {
         {detail ? (
           <div>
             <Typography.Paragraph>群：{detail.group_id}</Typography.Paragraph>
+            <Typography.Paragraph>群名：{names[String(detail.group_id)] || ""}</Typography.Paragraph>
             <Typography.Paragraph>成员：{detail.user_id}</Typography.Paragraph>
+            <Typography.Paragraph>群昵称：{detail.sender_name || ""}</Typography.Paragraph>
             <Typography.Paragraph>原因：{detail.reason_text}</Typography.Paragraph>
             <Typography.Paragraph>时间：{detail.created_at}</Typography.Paragraph>
             <Typography.Paragraph>文本：{detail.text || "（空）"}</Typography.Paragraph>
