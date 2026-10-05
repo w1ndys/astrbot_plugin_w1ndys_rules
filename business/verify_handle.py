@@ -42,15 +42,15 @@ async def handle_verify_private(
     event: object,
     user_id: str,
     text: str,
-) -> tuple[bool, str]:
-    """处理私聊交码。返回 (已处理, 私聊文案)。已处理时入口要停 LLM。"""
+) -> tuple[bool, str, str]:
+    """处理私聊交码。返回 (已处理, 私聊文案, 通过的群号)。已处理时入口要停 LLM。"""
     # 没有 QQ 号对不上 pending
     if not user_id:
-        return False, ""
+        return False, "", ""
     action, group_id, prompt_id = match_private_code(store, user_id, text)
     # 不是待验证私聊，后面的流程继续
     if not action:
-        return False, ""
+        return False, "", ""
     _log.info(
         "[rules] verify private user=%s action=%s group=%s",
         user_id,
@@ -59,9 +59,9 @@ async def handle_verify_private(
     )
     # 对不上任何一群的码，只在私聊说不对
     if action == "fail":
-        return True, FAIL_REPLY
+        return True, FAIL_REPLY, ""
     await store.delete(group_id, user_id)
     await recall_message_id(event, prompt_id)
     await unmute_user(event, group_id, user_id)
-    # 自己交码通过只在私聊说，群里不再报
-    return True, PASS_REPLY
+    # 群里不再报通过；群号交给入口取这一群的欢迎语
+    return True, PASS_REPLY, group_id

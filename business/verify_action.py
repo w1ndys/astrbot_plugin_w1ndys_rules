@@ -181,6 +181,21 @@ async def send_group_plain(event: object, group_id: str, text: str) -> None:
         return
     await _call_action(event, "send_group_msg", group_id=gid, message=text)
 
+async def send_private_plain(event: object, user_id: str, text: str) -> None:
+    """私聊一句纯文本。不返回 message_id，不能拿去撤回。"""
+    # 空文案不发空私聊
+    if not text:
+        return
+    # 没有 QQ 对不上人
+    if not user_id:
+        return
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        # 号码不是整数，协议端收不了
+        return
+    await _call_action(event, "send_private_msg", user_id=uid, message=text)
+
 
 async def send_verify_prompt(
     event: object, user_id: str, text: str, group_id: str = ""

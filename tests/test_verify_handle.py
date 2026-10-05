@@ -95,11 +95,12 @@ class VerifyHandleTest(unittest.IsolatedAsyncioTestCase):
     async def test_private_pass_unmutes_recalls_and_replies_privately(self) -> None:
         await self._pending("123456", "77")
         event = FakeSpeakEvent()
-        handled, reply = await handle_verify_private(
+        handled, reply, passed_group = await handle_verify_private(
             self.store, event, self.user_id, "123456"
         )
         self.assertTrue(handled)
         self.assertEqual(reply, PASS_REPLY)
+        self.assertEqual(passed_group, self.group_id)
         self.assertEqual(self.store.get_code(self.group_id, self.user_id), "")
         self.assertEqual(
             event.bot.api.calls,
@@ -115,21 +116,23 @@ class VerifyHandleTest(unittest.IsolatedAsyncioTestCase):
     async def test_private_fail_does_not_call_onebot(self) -> None:
         await self._pending()
         event = FakeSpeakEvent()
-        handled, reply = await handle_verify_private(
+        handled, reply, passed_group = await handle_verify_private(
             self.store, event, self.user_id, "hello"
         )
         self.assertTrue(handled)
         self.assertEqual(reply, FAIL_REPLY)
+        self.assertEqual(passed_group, "")
         self.assertEqual(event.bot.api.calls, [])
         self.assertEqual(self.store.get_code(self.group_id, self.user_id), "123456")
 
     async def test_private_skip_does_not_call_onebot(self) -> None:
         event = FakeSpeakEvent()
-        handled, reply = await handle_verify_private(
+        handled, reply, passed_group = await handle_verify_private(
             self.store, event, self.user_id, "hello"
         )
         self.assertFalse(handled)
         self.assertEqual(reply, "")
+        self.assertEqual(passed_group, "")
         self.assertEqual(event.bot.api.calls, [])
 
 

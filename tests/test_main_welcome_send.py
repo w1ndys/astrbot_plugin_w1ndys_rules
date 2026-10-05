@@ -101,7 +101,6 @@ from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_VERIFY_GROUPS,
     CFG_WELCOME_GROUPS,
     CFG_WELCOME_TEXT,
-    DEFAULT_WELCOME_TEXT,
     VERIFY_JOIN_MUTE_SECONDS,
 )
 from astrbot_plugin_w1ndys_rules.main import RulesPlugin
@@ -198,14 +197,15 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.invite = InviteStore(db_path)
         self.plugin.welcome = WelcomeStore(db_path)
         self.plugin.config = {}
-
+        self.plugin.settings = {}
 
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     async def test_increase_sends_at_and_text(self) -> None:
-        self.plugin.config = {
+        """只开欢迎语时入群也不发群消息，欢迎语等通过后再私聊。"""
+        self.plugin.settings = {
             CFG_WELCOME_GROUPS: ["123"],
             CFG_WELCOME_TEXT: "请先看群规",
         }
@@ -213,11 +213,8 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
         self.assertTrue(event.stopped)
-        # 欢迎语走 event.send，不能再靠 yield 交给已经停掉的框架
         self.assertEqual(yielded, [])
-        self.assertEqual(len(event.sent), 1)
-        self.assertEqual(event.sent[0][0].qq, "10001")
-        self.assertEqual(event.sent[0][1].text, "\n请先看群规")
+        self.assertEqual(event.sent, [])
 
     async def test_increase_off_is_silent(self) -> None:
         event = FakeEvent({"notice_type": "group_increase"})
@@ -227,7 +224,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_plain_group_message_ignored(self) -> None:
-        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_WELCOME_GROUPS: ["123"]}
 
         event = FakeEvent({"post_type": "message"})
         sent = await collect(self.plugin.on_group_increase(event))
@@ -236,15 +233,16 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sent, [])
 
     async def test_increase_without_saved_text_uses_default(self) -> None:
-        self.plugin.config = {CFG_WELCOME_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_WELCOME_GROUPS: ["123"]}
 
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
+        # 没有通过验证就不再发默认句，群里保持安静
         self.assertEqual(yielded, [])
-        self.assertEqual(event.sent[0][1].text, "\n" + DEFAULT_WELCOME_TEXT)
+        self.assertEqual(event.sent, [])
 
     async def test_increase_verify_only_sends_code(self) -> None:
-        self.plugin.config = {CFG_VERIFY_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_VERIFY_GROUPS: ["123"]}
 
         event = FakeEvent({"notice_type": "group_increase"})
         sent = await collect(self.plugin.on_group_increase(event))
@@ -270,7 +268,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("私聊", str(event.bot.api.calls[1][1]["message"]))
 
     async def test_increase_welcome_and_verify_are_separate(self) -> None:
-        self.plugin.config = {
+        self.plugin.settings = {
             CFG_WELCOME_GROUPS: ["123"],
             CFG_VERIFY_GROUPS: ["123"],
             CFG_WELCOME_TEXT: "请先看群规",
@@ -279,11 +277,9 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent({"notice_type": "group_increase"})
         yielded = await drive_stopped(event, self.plugin.on_group_increase(event))
         code = self.plugin.verify.get_code("123", "10001")
-        # 欢迎已直接发出；调度器在 yield 处停掉时，后面的禁言和验证码仍要发生
+        # 入群不再发欢迎语；调度器在 yield 处停掉时，后面的禁言和验证码仍要发生
         self.assertEqual(yielded, [])
-        self.assertEqual(len(event.sent), 1)
-        self.assertIn("请先看群规", event.sent[0][1].text)
-        self.assertNotIn(code, event.sent[0][1].text)
+        self.assertEqual(event.sent, [])
         self.assertEqual(
             event.bot.api.calls[0],
             (
@@ -346,7 +342,7 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "123456")
 
     async def test_increase_records_invite_edge(self) -> None:
-        self.plugin.config = {CFG_INVITE_GROUPS: ["123"]}
+        self.plugin.settings = {CFG_INVITE_GROUPS: ["123"]}
 
         event = FakeEvent(
             {
@@ -360,3 +356,28 @@ class WelcomeSendEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(edge)
         self.assertEqual(edge.inviter_id, "10086")
         self.assertEqual(edge.sub_type, "invite")
+
+    async def test_admin_unmute_sends_welcome_in_group(self) -> None:
+        """管理员群内解禁视为通过：群里先发这一群的欢迎语，再报通过句。"""
+        self.plugin.settings = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_VERIFY_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
+        }
+        await self.plugin.verify.put("123", "10001", "123456")
+        event = FakeEvent(
+            {
+                "notice_type": "group_ban",
+                "sub_type": "lift_ban",
+                "operator_id": "10086",
+            }
+        )
+        sent = await collect(self.plugin.on_group_unmute(event))
+        self.assertEqual(len(sent), 2)
+        # 第一条是 @ 加欢迎语，第二条才是通过句
+        self.assertEqual(sent[0][0].qq, "10001")
+        self.assertIn("请先看群规", sent[0][1].text)
+        self.assertEqual(sent[1], "已通过人机验证。")
+        actions = [name for name, _kwargs in event.bot.api.calls]
+        self.assertNotIn("send_private_msg", actions)
+        self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")

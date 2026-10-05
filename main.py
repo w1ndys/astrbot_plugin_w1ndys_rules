@@ -63,6 +63,7 @@ from .business.settings_page import get_settings, save_settings
 from .business.verify_action import (
     mute_user,
     recall_message_id,
+    send_private_plain,
     send_verify_prompt,
     unmute_user,
 )
@@ -80,6 +81,7 @@ from .data.forbidden_store import ForbiddenStore
 from .data.group_name_store import GroupNameStore
 from .data.invite_store import InviteStore
 from .data.keyword_store import KeywordStore
+from .data.setting_store import SettingStore
 from .data.verify_store import VerifyStore
 from .data.welcome_store import WelcomeStore
 from .entity.constants import (
@@ -110,6 +112,10 @@ class RulesPlugin(Star):
         self.blacklist = BlacklistStore(db_path)
         self.welcome = WelcomeStore(db_path)
         self.group_names = GroupNameStore(db_path)
+        # 配置改存库：空表才从 schema 导入一次，之后热路径只读 self.settings
+        self.setting_store = SettingStore(db_path)
+        self.setting_store.import_if_empty(get_settings(config))
+        self.settings = self.setting_store.load_dict()
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
         self._remind_task = None
@@ -518,23 +524,25 @@ class RulesPlugin(Star):
         )
 
     async def page_settings_get(self):
-        """WebUI：读当前非密钥 schema 字段。"""
+        """WebUI：读当前配置。值来自 rules.db 的 plugin_setting。"""
         from astrbot.api.web import json_response
 
-        return json_response(get_settings(self.config))
+        return json_response(self.settings)
 
     async def page_settings_save(self):
-        """WebUI：写回非密钥字段。"""
+        """WebUI：把带上的字段写回 plugin_setting。"""
         from astrbot.api.web import error_response, json_response, request
 
         payload = await request.json(default={})
         # 不是对象就写不回去
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象", status_code=400)
-        ok, message = save_settings(self.config, payload)
+        ok, message = await save_settings(self.setting_store, payload)
         # 校验失败用 400
         if not ok:
             return error_response(message, status_code=400)
+        # 保存成功后热路径立刻按新值跑
+        self.settings = self.setting_store.load_dict()
         return json_response({"message": message})
 
     def _register_group_name_pages(self) -> None:
@@ -695,20 +703,24 @@ class RulesPlugin(Star):
         """私聊交码。不是待验证就放过，让别的插件和模型继续。"""
         self._remember_bot(event)
         text = event.message_str or ""
-        handled, reply = await handle_verify_private(
+        handled, reply, passed_group = await handle_verify_private(
             self.verify, event, _sender_id_of(event), text
         )
         # 这个人没有 pending，不当验证私聊
         if not handled:
             return
-        # 失败回不对；成功回已通过。都在私聊，拦 LLM
+        # 通过且这一群有欢迎语时，私聊只发欢迎语
+        if passed_group:
+            welcome = _welcome_text(self, passed_group)
+            if welcome:
+                reply = welcome
         if reply:
             yield event.plain_result(reply)
         _stop_llm(event)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_increase(self, event: AstrMessageEvent):
-        """群成员增加：欢迎语和验证说明分开发。空通知也要停 LLM。"""
+        """群成员增加：入群不发欢迎语，只在开了验证时发说明。空通知也要停 LLM。"""
         self._remember_bot(event)
         group_id = _group_id_of(event)
         # 拿不到群号就不是群通知
@@ -723,34 +735,30 @@ class RulesPlugin(Star):
         # WebUI 名单里才写邀请边；拿不到邀请人由业务层决定不记
         await record_join(
             self.invite,
-            self.config,
+            self.settings,
             event,
             group_id,
             user_id,
             _self_id_of(event),
         )
-        welcome = pick_welcome(self.welcome, self.config, group_id)
-
         verify = await start_pending(
             self.verify,
-            self.config,
+            self.settings,
             group_id,
             user_id,
             _self_id_of(event),
         )
-
-        # 有欢迎语就当场发出。不能 yield：事件已停，框架不会再恢复本处理器，禁言和验证码就发不出去
-        if welcome:
-            await event.send(_join_at_text(event, user_id, welcome))
-        # 没开验证就只发欢迎语
-        if not verify:
+        # 开了验证就只禁言和发验证码，欢迎语等通过后私聊
+        if verify:
+            await mute_user(event, group_id, user_id, VERIFY_JOIN_MUTE_SECONDS)
+            mid = await send_verify_prompt(event, user_id, verify)
+            # 没拿到消息 ID 也先让人去私聊交码
+            if not mid:
+                return
+            await self.verify.set_prompt_message_id(group_id, user_id, mid)
             return
-        await mute_user(event, group_id, user_id, VERIFY_JOIN_MUTE_SECONDS)
-        mid = await send_verify_prompt(event, user_id, verify)
-        # 没拿到消息 ID 也先让人去私聊交码
-        if not mid:
-            return
-        await self.verify.set_prompt_message_id(group_id, user_id, mid)
+        # 没开验证也不往群里发欢迎语
+        return
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_decrease(self, event: AstrMessageEvent):
@@ -791,6 +799,10 @@ class RulesPlugin(Star):
         if not dropped:
             return
         await recall_message_id(event, prompt_id)
+        welcome = _welcome_text(self, group_id)
+        # 管理员在群里解禁，欢迎语也发回这个群，不进私聊
+        if welcome:
+            yield _join_at_text(event, user_id, welcome)
         yield event.plain_result(PASS_REPLY)
 
     @filter.llm_tool(name="blacklist_add")
@@ -884,7 +896,7 @@ class RulesPlugin(Star):
         """
         return await _with_group(
             event,
-            lambda group_id: _verify_pass(self.verify, event, group_id, user_id),
+            lambda group_id: _verify_pass(self, self.verify, event, group_id, user_id),
         )
 
     @filter.llm_tool(name="verify_reject")
@@ -997,8 +1009,17 @@ def _can_call_action(bot: object) -> bool:
 ONLY_IN_GROUP = "这个功能只能在群里用。"
 
 
+def _welcome_text(plugin: object, group_id: str) -> str:
+    """取这一群当前欢迎语。没挂存储或没开就空串。"""
+    welcome = getattr(plugin, "welcome", None)
+    # 旧测试桩没有欢迎语存储，不能把通过流程打挂
+    if welcome is None:
+        return ""
+    return pick_welcome(welcome, getattr(plugin, "settings", None), group_id)
+
+
 async def _verify_pass(
-    store: VerifyStore, event: object, group_id: str, user_id: str
+    plugin: object, store: VerifyStore, event: object, group_id: str, user_id: str
 ) -> str:
     """管理员通过后解禁、撤回提示、群里 @。没通过就不调 OneBot。"""
     clean = user_id.strip()
@@ -1011,6 +1032,10 @@ async def _verify_pass(
     if unmute:
         await unmute_user(event, group_id, unmute)
         await recall_message_id(event, prompt_id)
+        welcome = _welcome_text(plugin, group_id)
+        # 工具通过的群事件不能用 yield 发私聊
+        if welcome:
+            await send_private_plain(event, unmute, welcome)
         await send_verify_prompt(event, unmute, PASS_REPLY)
     return message
 

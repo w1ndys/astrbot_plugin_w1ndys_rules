@@ -95,6 +95,8 @@ from astrbot_plugin_w1ndys_rules.data.verify_store import VerifyStore
 from astrbot_plugin_w1ndys_rules.data.welcome_store import WelcomeStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_FORBIDDEN_GROUPS,
+    CFG_WELCOME_GROUPS,
+    CFG_WELCOME_TEXT,
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_REMIND_TEXT,
@@ -181,6 +183,7 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin = RulesPlugin.__new__(RulesPlugin)
         self.plugin.context = None
         self.plugin.config = {}
+        self.plugin.settings = {}
         self.plugin.keywords = KeywordStore(db_path)
         self.plugin.verify = VerifyStore(db_path)
         self.plugin.forbidden = ForbiddenStore(db_path)
@@ -225,6 +228,30 @@ class VerifySpeakEntryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, [PASS_REPLY])
         self.assertTrue(event.stopped)
         self.assertEqual(self.plugin.verify.get_code("123", "10001"), "")
+        self.assertEqual(
+            event.bot.api.calls,
+            [
+                ("delete_msg", {"message_id": 77}),
+                (
+                    "set_group_ban",
+                    {"group_id": 123, "user_id": 10001, "duration": 0},
+                ),
+            ],
+        )
+
+    async def test_private_pass_replies_welcome_privately(self) -> None:
+        """私聊交码通过后只回这一群的欢迎语，不再另发私聊消息。"""
+        self.plugin.welcome = WelcomeStore(Path(self._tmp.name) / "rules.db")
+        self.plugin.settings = {
+            CFG_WELCOME_GROUPS: ["123"],
+            CFG_WELCOME_TEXT: "请先看群规",
+        }
+        await self._pending()
+        await self.plugin.verify.set_prompt_message_id("123", "10001", "77")
+        event = FakeEvent("123456")
+        sent = await collect(self.plugin.on_private_verify(event))
+        self.assertEqual(sent, ["请先看群规"])
+        self.assertNotIn(PASS_REPLY, sent)
         self.assertEqual(
             event.bot.api.calls,
             [
