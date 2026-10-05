@@ -498,3 +498,29 @@ class ForbiddenHandleTest(unittest.IsolatedAsyncioTestCase):
             return FakeProvider(text)
 
         return get_provider
+
+    async def test_feishu_message_equals_log_text(self) -> None:
+        """模型命中时飞书「消息」正文和这条日志的文本是同一份送审文本。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        posted: list[tuple[str, dict]] = []
+
+        def poster(url: str, body: dict) -> None:
+            posted.append((url, body))
+
+        event = FakeEvent()
+        event.message_str = "  这里有广告  "
+        await handle_forbidden_message(
+            ready_config(),
+            FakeForbiddenStore(),
+            event,
+            "123",
+            "这里有广告",
+            self._provider("是"),
+            poster,
+            log_store=store,
+        )
+        items, _total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        feishu = posted[0][1]["content"]["text"]
+        self.assertIn(f"消息：{items[0].text}", feishu)
