@@ -430,8 +430,9 @@ async def apply_hit_actions(
     reason_code: str = "",
     judge_reason: str = "",
     mute_store=None,
-) -> str:
-    """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。"""
+    log_text: str | None = None,
+    ) -> str:
+    """命中后：先采原文，再撤回当前条和该用户近 30 条、禁言、飞书、写日志。log_text 只在模型命中时传，日志文本用它。"""
     payload = await take_payload(log_store, reason_code, event)
     await recall_message(event)
     await recall_user_recent(event, group_id)
@@ -460,6 +461,7 @@ async def apply_hit_actions(
         payload,
         judge_reason,
         sender_name,
+        log_text,
     )
     return remind_text(config)
 

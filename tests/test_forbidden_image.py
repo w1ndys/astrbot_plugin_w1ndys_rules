@@ -1,6 +1,7 @@
 # 图片路：二维码直接违禁；原图 OCR 有可见文字后走触发词，命中再送模型。
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_handle import (
     handle_forbidden_message,
 )
 from astrbot_plugin_w1ndys_rules.business.forbidden_image import plan_image_test
+from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_FORBIDDEN_GROUPS,
     FORBIDDEN_CFG_GUIDELINE,
@@ -230,3 +232,49 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             return FakeProvider(text)
 
         return get_provider
+
+    async def test_transcript_hit_writes_model_user_text(self) -> None:
+        """转写命中：日志文本存送审用户文本（含转写正文），不是外层 message_str。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        event = FakeEvent()
+        event.message_str = "外层消息文本"
+        handled, _reply = await handle_forbidden_message(
+            ready_config(),
+            FakeStore(),
+            event,
+            "123",
+            "",
+            self._provider("是"),
+            decoder=lambda data: False,
+            transcribe=lambda _event: HIT,
+            log_store=store,
+        )
+        items, total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        self.assertTrue(handled)
+        self.assertEqual(total, 1)
+        self.assertIn(HIT, items[0].text)
+        self.assertNotIn("外层消息文本", items[0].text)
+
+    async def test_qr_hit_still_writes_message_str(self) -> None:
+        """二维码命中不请求模型，日志文本仍用外层 message_str。"""
+        tmp = tempfile.TemporaryDirectory()
+        store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
+        event = FakeEvent()
+        event.message_str = "外层消息文本"
+        handled, _reply = await handle_forbidden_message(
+            ready_config(),
+            FakeStore(),
+            event,
+            "123",
+            "",
+            self._provider("是"),
+            decoder=lambda data: True,
+            log_store=store,
+        )
+        items, total = store.list_page("", "", "", 0, 10)
+        tmp.cleanup()
+        self.assertTrue(handled)
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0].text, "外层消息文本")

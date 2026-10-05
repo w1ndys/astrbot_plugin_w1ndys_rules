@@ -76,8 +76,9 @@ async def save_hit_log(
     payload: tuple[str, str, str] | None,
     judge_reason: str = "",
     sender_name: str = "",
-) -> None:
-    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。sender_name 是命中当时的群昵称，读不到传空串。"""
+    log_text: str | None = None,
+    ) -> None:
+    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。sender_name 是命中当时的群昵称，读不到传空串。log_text 只由模型命中传入。"""
     # 没采集就表示这次不记
     if payload is None:
         return
@@ -88,6 +89,9 @@ async def save_hit_log(
     if not isinstance(log_store, ForbiddenLogStore):
         return
     text, json_text, images = payload
+    # 模型命中给了用户文本就用它，没给的调用方仍用外层 message_str
+    if log_text is not None:
+        text = log_text
     try:
         await log_store.insert(
             group_id,

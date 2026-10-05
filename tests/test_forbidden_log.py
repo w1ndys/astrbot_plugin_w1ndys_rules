@@ -165,7 +165,7 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    async def _hit(self, event) -> None:
+    async def _hit(self, event, log_text=None) -> None:
         """按文本模型命中跑一次处置，只关心写进库的那条日志。"""
         await apply_hit_actions(
             event,
@@ -175,6 +175,7 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
             "这里有广告",
             log_store=self.store,
             reason_code=FORBIDDEN_REASON_MODEL,
+            log_text=log_text,
         )
 
     def _last_row(self):
@@ -237,3 +238,15 @@ class ApplyHitLogTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(total, 2)
         self.assertEqual(items[0].sender_name, "小刚")
         self.assertEqual(items[1].sender_name, "小明")
+
+    async def test_log_text_overrides_message_str(self) -> None:
+        """模型命中传了用户文本时，text 存这份文本而不是外层 message_str。"""
+        event = FakeEvent("外层转发文本")
+        await self._hit(event, log_text="送给模型的用户文本")
+        self.assertEqual(self._last_row().text, "送给模型的用户文本")
+
+    async def test_empty_log_text_stays_empty(self) -> None:
+        """送审用户文本为空时 text 存空串，不回退到 message_str。"""
+        event = FakeEvent("外层转发文本")
+        await self._hit(event, log_text="")
+        self.assertEqual(self._last_row().text, "")
