@@ -35,6 +35,11 @@ from .business.blacklist_admin import (
 )
 from .business.debug_payload import inspect_payload
 from .business.forbidden_action import call_result
+from .business.forbidden_backfill import (
+    backfill_group,
+    backfill_message,
+    pending_backfill_groups,
+)
 from .business.forbidden_forward import resolve_audit_text
 from .business.forbidden_handle import handle_forbidden_message
 from .business.forbidden_image import message_has_image, plan_image_test
@@ -490,6 +495,13 @@ class RulesPlugin(Star):
             ["POST"],
             "违禁日志详情",
         )
+
+        register(
+            f"/{PLUGIN_NAME}/forbidden-log/backfill-nicknames",
+            self.page_forbidden_log_backfill,
+            ["POST"],
+            "回补违禁日志群昵称",
+        )
         register(
             f"/{PLUGIN_NAME}/whitelist/add",
             self.page_whitelist_add,
@@ -550,6 +562,53 @@ class RulesPlugin(Star):
         if not ok:
             return error_response(str(result), status_code=404)
         return json_response(result)
+
+    async def page_forbidden_log_backfill(self):
+        """WebUI：把空群昵称按当前群成员资料补一次。不在插件启动时跑。"""
+        from astrbot.api.web import error_response, json_response
+
+        groups = pending_backfill_groups(self.forbidden_logs)
+        # 没有空昵称日志，不必碰 OneBot
+        if not groups:
+            return json_response(
+                {"message": backfill_message(0, []), "updated": 0, "failed": []}
+            )
+        bot = self._ensure_onebot()
+        # 没有 OneBot 整次失败，已有日志保持原样
+        if bot is None:
+            return error_response(
+                "还没有 OneBot，等机器人进过群后再拉。", status_code=400
+            )
+        updated, failed = await self._backfill_groups(bot, groups)
+        return json_response(
+            {
+                "message": backfill_message(updated, failed),
+                "updated": updated,
+                "failed": failed,
+            }
+        )
+
+    async def _backfill_groups(self, bot: object, groups: list) -> tuple:
+        """逐群拉成员资料再回补。某一群失败只记下来，其余群继续。"""
+        updated = 0
+        failed = []
+        for group_id in groups:
+            number = _group_number(group_id)
+            # 群号不是数字，协议端拉不了这一群
+            if number is None:
+                failed.append({"group_id": group_id, "reason": "群号不是数字。"})
+                continue
+            raw = await call_result(
+                _BotEvent(bot), "get_group_member_list", group_id=number
+            )
+            # 这一群拉不到，成员昵称保持空，继续下一群
+            if raw is None:
+                failed.append(
+                    {"group_id": group_id, "reason": "群成员资料拉取失败。"}
+                )
+                continue
+            updated += await backfill_group(self.forbidden_logs, group_id, raw)
+        return updated, failed
 
     async def page_whitelist_add(self):
         """WebUI：把日志行上的人加入本群或全局白名单。"""
@@ -1092,6 +1151,14 @@ class RulesPlugin(Star):
                 event, group_id, message_id, sender, keyword
             ),
         )
+
+
+def _group_number(group_id: str):
+    """群号转 int 给协议端。不是数字就给 None，调用方把这一群算失败。"""
+    try:
+        return int(group_id)
+    except (TypeError, ValueError):
+        return None
 
 
 class _BotEvent:

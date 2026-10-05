@@ -150,6 +150,21 @@ class ForbiddenLogStore:
             items.append(_row_to_log(row))
         return items, total
 
+    def groups_with_empty_sender_name(self) -> list[str]:
+        """还留着空群昵称的群号，去重后按群号排。回补按这份清单逐群拉成员。"""
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT group_id FROM forbidden_log "
+                "WHERE sender_name = '' ORDER BY group_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        groups = []
+        for row in rows:
+            groups.append(str(row[0]))
+        return groups
+
     async def update_reason(
         self, log_id: int, reason_code: str, reason_text: str
     ) -> bool:
@@ -163,6 +178,13 @@ class ForbiddenLogStore:
         """按 id 删一条。没有这条返回 False。HTTP 这一版不挂。"""
         async with self._lock:
             return await asyncio.to_thread(self._delete_sync, log_id)
+
+    async def backfill_sender_names(self, group_id: str, names: dict) -> int:
+        """把这一群里还空着的群昵称填上，返回写入条数。已有昵称的行不改。"""
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._backfill_sender_names_sync, group_id, names
+            )
 
     def _count(self, where_sql: str, args: list) -> int:
         """按同一套筛选条件数总数。"""
@@ -238,6 +260,29 @@ class ForbiddenLogStore:
             cur = conn.execute("DELETE FROM forbidden_log WHERE id = ?", (log_id,))
             conn.commit()
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def _backfill_sender_names_sync(self, group_id: str, names: dict) -> int:
+        """同步只填空群昵称，给 to_thread 用。已有昵称的行不动。"""
+        # 没拿到成员资料就没什么可填
+        if not names:
+            return 0
+        written = 0
+        conn = connect(self.db_path)
+        try:
+            for user_id, sender_name in names.items():
+                # 空值不能写进去，否则下次回补还要再处理一遍
+                if not sender_name:
+                    continue
+                cur = conn.execute(
+                    "UPDATE forbidden_log SET sender_name = ? "
+                    "WHERE group_id = ? AND user_id = ? AND sender_name = ''",
+                    (sender_name, group_id, user_id),
+                )
+                written += cur.rowcount
+            conn.commit()
+            return written
         finally:
             conn.close()
 

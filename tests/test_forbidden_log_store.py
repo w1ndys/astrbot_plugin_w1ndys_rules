@@ -149,3 +149,35 @@ class ForbiddenLogStoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.sender_name, "小明")
         items, _total = self.store.list_page("123", "", "", 0, 10)
         self.assertEqual(items[0].sender_name, "小明")
+
+    async def test_backfill_keeps_existing_sender_name(self) -> None:
+        """回补只填空昵称：已写过的行不动，写入条数只算空行。"""
+        await self.store.insert(
+            "111", "1", FORBIDDEN_REASON_MODEL, "a", "t", "[]", "[]", "旧名片"
+        )
+        await self.store.insert(
+            "111", "2", FORBIDDEN_REASON_MODEL, "a", "t", "[]", "[]"
+        )
+        await self.store.insert(
+            "222", "3", FORBIDDEN_REASON_MODEL, "a", "t", "[]", "[]"
+        )
+        self.assertEqual(self.store.groups_with_empty_sender_name(), ["111", "222"])
+        written = await self.store.backfill_sender_names(
+            "111", {"1": "新名片", "2": "小刚", "9": "查不到"}
+        )
+        self.assertEqual(written, 1)
+        self.assertEqual(self.store.get(1).sender_name, "旧名片")
+        self.assertEqual(self.store.get(2).sender_name, "小刚")
+        # 111 补完了，只剩 222 还留着空昵称
+        self.assertEqual(self.store.groups_with_empty_sender_name(), ["222"])
+
+    async def test_backfill_out_of_group_member_stays_empty(self) -> None:
+        """成员资料为空，或成员不在这一群时，空昵称保持空。"""
+        await self.store.insert(
+            "111", "2", FORBIDDEN_REASON_MODEL, "a", "t", "[]", "[]"
+        )
+        self.assertEqual(await self.store.backfill_sender_names("111", {}), 0)
+        self.assertEqual(self.store.get(1).sender_name, "")
+        # 别的群的成员资料不能填到这一群的日志上
+        self.assertEqual(await self.store.backfill_sender_names("222", {"2": "小刚"}), 0)
+        self.assertEqual(self.store.get(1).sender_name, "")

@@ -1,6 +1,7 @@
 # 业务层：从 OneBot 原始消息读发言人在本群的角色和群昵称。
 # AstrBot 的 MessageMember 没有 role，不能问 event.sender.role。
 # 群昵称也从同一个 sender 读：群名片优先，其次 QQ 昵称。
+# display_name_of 是群昵称的唯一规则，命中写日志和旧日志回补都调它。
 
 from ..entity.constants import QQ_ROLE_ADMIN, QQ_ROLE_OWNER
 
@@ -44,16 +45,21 @@ def speaker_display_name(event: object) -> str:
     return _display_name_of(_sender_of(raw))
 
 
+def display_name_of(card: str, nickname: str) -> str:
+    """群名片优先，其次 QQ 昵称。命中写日志和旧日志回补都走这一条规则。"""
+    clean_card = card.strip()
+    # 群名片是成员在本群的展示名，优先用它
+    if clean_card:
+        return clean_card
+    return nickname.strip()
+
+
 def _display_name_of(sender: object) -> str:
-    """从 sender 取群昵称：群名片优先，其次 QQ 昵称，都空就是空串。"""
-    # 原始消息里没有 sender
+    """从 sender 取群昵称。原始消息里没有 sender 就是空串。"""
+    # 没有 sender 就没有名片也没有昵称
     if sender is None:
         return ""
-    card = _field_of(sender, "card").strip()
-    # 群名片是成员在本群的展示名，优先用它
-    if card:
-        return card
-    return _field_of(sender, "nickname").strip()
+    return display_name_of(_field_of(sender, "card"), _field_of(sender, "nickname"))
 
 
 def _sender_of(raw: object) -> object:
