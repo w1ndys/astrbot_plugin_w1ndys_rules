@@ -1,7 +1,7 @@
 // 页面层：每群一条欢迎语覆盖。空文案关闭本群，删除行继承全局。
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
+import { App as AntdApp, Button, Card, Input, Pagination, Space, Table } from "antd";
 
 function itemsToNameMap(items) {
   // 映射表对照群号。没保存过的群显示空。
@@ -19,6 +19,8 @@ function itemsToNameMap(items) {
 
 
 export function WelcomeView() {
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   const [filter, setFilter] = useState("");
   const [applied, setApplied] = useState("");
   const [page, setPage] = useState(1);

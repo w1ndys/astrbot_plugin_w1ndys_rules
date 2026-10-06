@@ -1,5 +1,7 @@
+// 页面层：插件页外壳。六块业务放进页内 Tab，切换只改 React state，不动顶层 hash。
+
 import { useEffect, useMemo, useState } from "react";
-import { ConfigProvider, Tabs, theme } from "antd";
+import { App as AntdApp, ConfigProvider, Tabs, theme } from "antd";
 import { PAGE_TABS } from "./nav.js";
 import { SettingsView } from "./settings-view.jsx";
 import { WelcomeView } from "./welcome-view.jsx";
@@ -48,16 +50,19 @@ export default function App() {
 
   return (
     <ConfigProvider theme={{ algorithm }}>
-      <main className="page">
-        <Tabs
-          type="card"
-          size="small"
-          activeKey={active}
-          onChange={setActive}
-          destroyInactiveTabPane
-          items={items}
-        />
-      </main>
+      {/* 里面的 message 走 useApp 才会跟随宿主明暗主题；component={false} 少一层 div */}
+      <AntdApp component={false}>
+        <main className="page">
+          <Tabs
+            type="card"
+            size="small"
+            activeKey={active}
+            onChange={setActive}
+            destroyOnHidden
+            items={items}
+          />
+        </main>
+      </AntdApp>
     </ConfigProvider>
   );
 }

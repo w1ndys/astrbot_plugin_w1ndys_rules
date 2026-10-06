@@ -1,7 +1,7 @@
 // 页面层：关键词表。一张表管全部群。
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
+import { App as AntdApp, Button, Card, Input, Pagination, Space, Table } from "antd";
 
 function itemsToNameMap(items) {
   // 映射表对照群号。没保存过的群显示空。
@@ -19,6 +19,8 @@ function itemsToNameMap(items) {
 
 
 export function KeywordsView() {
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   const [filter, setFilter] = useState("");
   const [applied, setApplied] = useState("");
   const [page, setPage] = useState(1);

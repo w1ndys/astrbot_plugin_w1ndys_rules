@@ -4,7 +4,7 @@
 
 
 import { useEffect, useState } from "react";
-import { Button, Card, Checkbox, Form, Input, InputNumber, Space, Table, message } from "antd";
+import { App as AntdApp, Button, Card, Checkbox, Form, Input, InputNumber, Space, Table } from "antd";
 
 const FEATURES = [
   { key: "keyword_groups", title: "关键词" },
@@ -149,17 +149,17 @@ function removeRow(setRows, groupId) {
   setRows((current) => current.filter((row) => row.groupId !== groupId));
 }
 
-function addRow(rows, setRows, rawId, setRawId) {
+function addRow(notice, rows, setRows, rawId, setRawId) {
   // 补一行空勾选。群号已存在则拒绝。
   const groupId = rawId.trim();
   // 没填群号就没法建行
   if (!groupId) {
-    message.error("先填群号。");
+    notice.error("先填群号。");
     return;
   }
   // 同一群只保留一行，避免勾选对不上
   if (rows.some((row) => row.groupId === groupId)) {
-    message.error("这个群已经在表里。");
+    notice.error("这个群已经在表里。");
     return;
   }
   const next = [...rows, { groupId, ...emptyFlags() }];
@@ -168,11 +168,11 @@ function addRow(rows, setRows, rawId, setRawId) {
   setRawId("");
 }
 
-async function bootSettings(bridge, form, setRows, setNames, setLoading, cancelled) {
+async function bootSettings(notice, bridge, form, setRows, setNames, setLoading, cancelled) {
   // 进页拉配置和已保存群名。
   // 没有官方桥接就读不出配置
   if (!bridge) {
-    message.error("页面桥接未就绪，请刷新后重试。");
+    notice.error("页面桥接未就绪，请刷新后重试。");
     return;
   }
   await bridge.ready();
@@ -195,54 +195,56 @@ async function bootSettings(bridge, form, setRows, setNames, setLoading, cancell
     }
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
   setLoading(false);
 }
 
-async function saveSettings(bridge, form, rows) {
+async function saveSettings(notice, bridge, form, rows) {
   // 勾选转名单，连同文案秒数一起 POST。不写群名。
   const values = await form.validateFields();
   const payload = { ...values, ...rowsToLists(rows) };
   try {
     const result = await bridge.apiPost("settings/save", payload);
-    message.success(result.message || "已保存");
+    notice.success(result.message || "已保存");
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
 }
 
-async function pullGroupNames(bridge, setNames, setBusy) {
+async function pullGroupNames(notice, bridge, setNames, setBusy) {
   // 调一次协议，只改草稿。
   setBusy(true);
   try {
     const data = await bridge.apiPost("group-name/pull", {});
     const incoming = itemsToNameMap(data.items);
     setNames((current) => ({ ...current, ...incoming }));
-    message.success("已填入群名，尚未保存。");
+    notice.success("已填入群名，尚未保存。");
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
   setBusy(false);
 }
 
-async function saveGroupNames(bridge, names) {
+async function saveGroupNames(notice, bridge, names) {
   // 把草稿 upsert 进映射表。
   try {
     const result = await bridge.apiPost("group-name/save", {
       items: nameDraftItems(names),
     });
-    message.success(result.message || "已保存群名");
+    notice.success(result.message || "已保存群名");
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
 }
 
 function GroupTable(props) {
   // 群号表和添加框。
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   return (
     <>
       <p className="hint">
@@ -255,7 +257,7 @@ function GroupTable(props) {
           value={props.newGroupId}
           onChange={(event) => props.setNewGroupId(event.target.value)}
         />
-        <Button onClick={() => addRow(props.rows, props.setRows, props.newGroupId, props.setNewGroupId)}>
+        <Button onClick={() => addRow(message, props.rows, props.setRows, props.newGroupId, props.setNewGroupId)}>
           添加群
         </Button>
         <Button loading={props.nameBusy} onClick={props.onPullNames}>
@@ -328,6 +330,8 @@ function ExtraFields(props) {
 
 export function SettingsView() {
   // 全局配置面板：表管功能开关，表单管文案秒数，群名单独拉和存。
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
@@ -338,7 +342,7 @@ export function SettingsView() {
 
   useEffect(() => {
     let cancelled = false;
-    bootSettings(bridge, form, setRows, setNames, setLoading, () => cancelled);
+    bootSettings(message, bridge, form, setRows, setNames, setLoading, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -359,10 +363,10 @@ export function SettingsView() {
         setNewGroupId={setNewGroupId}
         columns={columns}
         nameBusy={nameBusy}
-        onPullNames={() => pullGroupNames(bridge, setNames, setNameBusy)}
-        onSaveNames={() => saveGroupNames(bridge, names)}
+        onPullNames={() => pullGroupNames(message, bridge, setNames, setNameBusy)}
+        onSaveNames={() => saveGroupNames(message, bridge, names)}
       />
-      <ExtraFields form={form} onSave={() => saveSettings(bridge, form, rows)} />
+      <ExtraFields form={form} onSave={() => saveSettings(message, bridge, form, rows)} />
     </Card>
   );
 }

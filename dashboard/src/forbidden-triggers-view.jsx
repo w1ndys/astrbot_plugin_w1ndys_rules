@@ -1,9 +1,9 @@
 // 页面层：全局违禁触发词表。文本路命中这些词才送模型。
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Input, Pagination, Space, Table, message } from "antd";
+import { App as AntdApp, Button, Card, Input, Pagination, Space, Table } from "antd";
 
-async function loadRows(bridge, nextPage, nextSize, query, setters) {
+async function loadRows(notice, bridge, nextPage, nextSize, query, setters) {
   // 拉一页触发词。
   setters.setLoading(true);
   try {
@@ -18,42 +18,44 @@ async function loadRows(bridge, nextPage, nextSize, query, setters) {
     setters.setPageSize(Number(result.page_size) || nextSize);
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
   setters.setLoading(false);
 }
 
-async function saveRow(bridge, content, oldContent, reload) {
+async function saveRow(notice, bridge, content, oldContent, reload) {
   // 有旧词就改，没有就新增。
   try {
     const result = await bridge.apiPost("forbidden-trigger/save", {
       content,
       old_content: oldContent,
     });
-    message.success(result.message || "已保存");
+    notice.success(result.message || "已保存");
     await reload();
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
 }
 
-async function deleteRow(bridge, content, reload) {
+async function deleteRow(notice, bridge, content, reload) {
   // 按完整触发词删除。
   try {
     const result = await bridge.apiPost("forbidden-trigger/delete", {
       content,
     });
-    message.success(result.message || "已删除");
+    notice.success(result.message || "已删除");
     await reload();
   } catch (error) {
     const text = error && error.message ? error.message : String(error);
-    message.error(text);
+    notice.error(text);
   }
 }
 
 export function ForbiddenTriggersView() {
   // 全局触发词增删改查。
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   const [filter, setFilter] = useState("");
   const [applied, setApplied] = useState("");
   const [page, setPage] = useState(1);
@@ -67,7 +69,7 @@ export function ForbiddenTriggersView() {
   const setters = { setItems, setTotal, setPage, setPageSize, setLoading };
 
   const load = useCallback(
-    (nextPage, nextSize, query) => loadRows(bridge, nextPage, nextSize, query, setters),
+    (nextPage, nextSize, query) => loadRows(message, bridge, nextPage, nextSize, query, setters),
     [bridge],
   );
 
@@ -112,7 +114,7 @@ export function ForbiddenTriggersView() {
           >
             编辑
           </Button>
-          <Button type="link" danger onClick={() => deleteRow(bridge, row.content, reload)}>
+          <Button type="link" danger onClick={() => deleteRow(message, bridge, row.content, reload)}>
             删除
           </Button>
         </Space>
@@ -151,7 +153,7 @@ export function ForbiddenTriggersView() {
         <Button
           type="primary"
           onClick={async () => {
-            await saveRow(bridge, content, oldContent, reload);
+            await saveRow(message, bridge, content, oldContent, reload);
             setOldContent("");
             setContent("");
           }}

@@ -25,7 +25,6 @@ export default defineConfig({
       output: {
         format: "iife",
         name: "RulesConsole",
-        inlineDynamicImports: true,
         entryFileNames: "assets/index.js",
         chunkFileNames: "assets/[name].js",
         assetFileNames: "assets/[name].[ext]",

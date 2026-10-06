@@ -3,7 +3,7 @@
 // 每一行可以按本群或全局加白 / 拉黑；本群只影响该群，全局影响所有群，拉黑不踢人。
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography, message } from "antd";
+import { App as AntdApp, Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography } from "antd";
 
 const REASON_OPTIONS = [
   { value: "", label: "全部原因" },
@@ -83,6 +83,8 @@ function itemsToNameMap(items) {
 }
 
 export function ForbiddenLogsView() {
+  // message 从 useApp 取；静态 message 不跟随宿主明暗主题
+  const { message } = AntdApp.useApp();
   const [groupId, setGroupId] = useState("");
   const [userId, setUserId] = useState("");
   const [reasonCode, setReasonCode] = useState("");
