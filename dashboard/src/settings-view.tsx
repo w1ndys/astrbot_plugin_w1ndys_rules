@@ -5,8 +5,26 @@
 
 import { useEffect, useState } from "react";
 import { App as AntdApp, Button, Card, Checkbox, Form, Input, InputNumber, Space, Table } from "antd";
+import type { Dispatch, SetStateAction } from "react";
+import type { FormInstance, TableProps } from "antd";
+import { apiPost, getBridge, readError } from "./bridge";
+import type {
+  FeatureFlags,
+  FeatureKey,
+  FeatureLists,
+  GroupNameItem,
+  GroupNameListResponse,
+  MessageResponse,
+  SettingsPayload,
+} from "./types";
 
-const FEATURES = [
+// 六个功能名单：配置键和表头。
+interface FeatureItem {
+  key: FeatureKey;
+  title: string;
+}
+
+const FEATURES: FeatureItem[] = [
   { key: "keyword_groups", title: "关键词" },
   { key: "forbidden_groups", title: "违禁词" },
   { key: "welcome_groups", title: "欢迎语" },
@@ -15,18 +33,43 @@ const FEATURES = [
   { key: "forbidden_block_group_card_groups", title: "拦截群名片" },
 ];
 
-function emptyFlags() {
-  // 新建一行时六个功能都先关。
-  const flags = {};
-  for (const feature of FEATURES) {
-    flags[feature.key] = false;
-  }
-  return flags;
+// 表格一行：群号加六个功能开关。
+type SettingsRow = FeatureFlags & { groupId: string };
+
+// 列定义数组；TableProps 里的类型带 undefined，拼不起来，这里去掉
+type SettingsColumns = NonNullable<TableProps<SettingsRow>["columns"]>;
+
+// 表单只收非名单字段，名单走上面的表。
+type SettingsFormValues = Omit<SettingsPayload, FeatureKey>;
+
+// 群号到群名的草稿。
+type NameMap = Record<string, string>;
+
+// 只用到两个方法，避免深层导入 antd 的内部类型
+interface Notice {
+  success: (text: string) => void;
+  error: (text: string) => void;
 }
 
-function listsToRows(data) {
+// 改某一格勾选、删掉一行。
+type ToggleFeature = (groupId: string, key: FeatureKey, checked: boolean) => void;
+type RemoveGroup = (groupId: string) => void;
+
+function emptyFlags(): FeatureFlags {
+  // 新建一行时六个功能都先关。
+  return {
+    keyword_groups: false,
+    forbidden_groups: false,
+    welcome_groups: false,
+    verify_groups: false,
+    invite_groups: false,
+    forbidden_block_group_card_groups: false,
+  };
+}
+
+function listsToRows(data: SettingsPayload): SettingsRow[] {
   // 把各功能名单转成按群号一行。
-  const byGroup = {};
+  const byGroup: Record<string, SettingsRow> = {};
   for (const feature of FEATURES) {
     const groups = data[feature.key];
     // 名单不是数组就当这个功能全关
@@ -51,12 +94,16 @@ function listsToRows(data) {
     .map((groupId) => byGroup[groupId]);
 }
 
-function rowsToLists(rows) {
+function rowsToLists(rows: SettingsRow[]): FeatureLists {
   // 把勾选表转回各功能名单，供 settings/save。
-  const lists = {};
-  for (const feature of FEATURES) {
-    lists[feature.key] = [];
-  }
+  const lists: FeatureLists = {
+    keyword_groups: [],
+    forbidden_groups: [],
+    welcome_groups: [],
+    verify_groups: [],
+    invite_groups: [],
+    forbidden_block_group_card_groups: [],
+  };
   for (const row of rows) {
     const groupId = String(row.groupId || "").trim();
     // 没填群号的空行不写进名单
@@ -73,9 +120,9 @@ function rowsToLists(rows) {
   return lists;
 }
 
-function itemsToNameMap(items) {
+function itemsToNameMap(items: GroupNameItem[]): NameMap {
   // 接口 items 收成群号到群名，给表格对照。
-  const map = {};
+  const map: NameMap = {};
   for (const item of items || []) {
     const groupId = String(item.group_id || "").trim();
     // 空群号对不上勾选表
@@ -87,9 +134,9 @@ function itemsToNameMap(items) {
   return map;
 }
 
-function nameDraftItems(names) {
+function nameDraftItems(names: NameMap): GroupNameItem[] {
   // 草稿转保存请求。按群号排，方便对日志。
-  const items = [];
+  const items: GroupNameItem[] = [];
   const ids = Object.keys(names).sort();
   for (const groupId of ids) {
     items.push({ group_id: groupId, group_name: names[groupId] || "" });
@@ -97,21 +144,21 @@ function nameDraftItems(names) {
   return items;
 }
 
-function makeColumns(onToggle, onRemove, names) {
+function makeColumns(onToggle: ToggleFeature, onRemove: RemoveGroup, names: NameMap): SettingsColumns {
   // 群号列 + 群名列 + 功能勾选列 + 删除。
-  const columns = [
+  const columns: SettingsColumns = [
     { title: "群号", dataIndex: "groupId", key: "groupId" },
     {
       title: "群名",
       key: "groupName",
-      render: (_, row) => names[row.groupId] || "",
+      render: (_value: unknown, row: SettingsRow) => names[row.groupId] || "",
     },
   ];
   for (const feature of FEATURES) {
     columns.push({
       title: feature.title,
       key: feature.key,
-      render: (_, row) => (
+      render: (_value: unknown, row: SettingsRow) => (
         <Checkbox
           checked={!!row[feature.key]}
           onChange={(event) => onToggle(row.groupId, feature.key, event.target.checked)}
@@ -122,7 +169,7 @@ function makeColumns(onToggle, onRemove, names) {
   columns.push({
     title: "操作",
     key: "action",
-    render: (_, row) => (
+    render: (_value: unknown, row: SettingsRow) => (
       <Button type="link" danger onClick={() => onRemove(row.groupId)}>
         删除
       </Button>
@@ -131,7 +178,12 @@ function makeColumns(onToggle, onRemove, names) {
   return columns;
 }
 
-function toggleRowFeature(setRows, groupId, key, checked) {
+function toggleRowFeature(
+  setRows: Dispatch<SetStateAction<SettingsRow[]>>,
+  groupId: string,
+  key: FeatureKey,
+  checked: boolean,
+) {
   // 改某一群的某一个功能勾选。
   setRows((current) =>
     current.map((row) => {
@@ -139,17 +191,25 @@ function toggleRowFeature(setRows, groupId, key, checked) {
       if (row.groupId !== groupId) {
         return row;
       }
-      return { ...row, [key]: checked };
+      const next: SettingsRow = { ...row };
+      next[key] = checked;
+      return next;
     }),
   );
 }
 
-function removeRow(setRows, groupId) {
+function removeRow(setRows: Dispatch<SetStateAction<SettingsRow[]>>, groupId: string) {
   // 从表里去掉这个群，保存后该群各功能都关。
   setRows((current) => current.filter((row) => row.groupId !== groupId));
 }
 
-function addRow(notice, rows, setRows, rawId, setRawId) {
+function addRow(
+  notice: Notice,
+  rows: SettingsRow[],
+  setRows: Dispatch<SetStateAction<SettingsRow[]>>,
+  rawId: string,
+  setRawId: (value: string) => void,
+) {
   // 补一行空勾选。群号已存在则拒绝。
   const groupId = rawId.trim();
   // 没填群号就没法建行
@@ -168,80 +228,100 @@ function addRow(notice, rows, setRows, rawId, setRawId) {
   setRawId("");
 }
 
-async function bootSettings(notice, bridge, form, setRows, setNames, setLoading, cancelled) {
+async function bootSettings(
+  notice: Notice,
+  form: FormInstance<SettingsFormValues>,
+  setRows: Dispatch<SetStateAction<SettingsRow[]>>,
+  setNames: Dispatch<SetStateAction<NameMap>>,
+  setLoading: Dispatch<SetStateAction<boolean>>,
+  cancelled: () => boolean,
+) {
   // 进页拉配置和已保存群名。
   // 没有官方桥接就读不出配置
-  if (!bridge) {
-    notice.error("页面桥接未就绪，请刷新后重试。");
+  try {
+    getBridge();
+  } catch (error) {
+    notice.error(readError(error));
     return;
   }
-  await bridge.ready();
   // 卸载后不再写状态
   if (cancelled()) {
     return;
   }
   setLoading(true);
   try {
-    const data = await bridge.apiPost("settings/get", {});
+    const data = await apiPost<SettingsPayload>("settings/get", {});
     // 慢请求回来时页面可能已经切走
     if (!cancelled()) {
       form.setFieldsValue(data);
       setRows(listsToRows(data));
     }
-    const names = await bridge.apiPost("group-name/list", {});
+    const names = await apiPost<GroupNameListResponse>("group-name/list", {});
     // 映射失败不影响勾选表，上面已经摊好了
     if (!cancelled()) {
       setNames(itemsToNameMap(names.items));
     }
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
   setLoading(false);
 }
 
-async function saveSettings(notice, bridge, form, rows) {
+async function saveSettings(notice: Notice, form: FormInstance<SettingsFormValues>, rows: SettingsRow[]) {
   // 勾选转名单，连同文案秒数一起 POST。不写群名。
   const values = await form.validateFields();
-  const payload = { ...values, ...rowsToLists(rows) };
+  const payload: SettingsPayload = { ...values, ...rowsToLists(rows) };
   try {
-    const result = await bridge.apiPost("settings/save", payload);
+    const result = await apiPost<MessageResponse>("settings/save", payload);
     notice.success(result.message || "已保存");
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
 }
 
-async function pullGroupNames(notice, bridge, setNames, setBusy) {
+async function pullGroupNames(
+  notice: Notice,
+  setNames: Dispatch<SetStateAction<NameMap>>,
+  setBusy: Dispatch<SetStateAction<boolean>>,
+) {
   // 调一次协议，只改草稿。
   setBusy(true);
   try {
-    const data = await bridge.apiPost("group-name/pull", {});
+    const data = await apiPost<GroupNameListResponse>("group-name/pull", {});
     const incoming = itemsToNameMap(data.items);
     setNames((current) => ({ ...current, ...incoming }));
     notice.success("已填入群名，尚未保存。");
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
   setBusy(false);
 }
 
-async function saveGroupNames(notice, bridge, names) {
+async function saveGroupNames(notice: Notice, names: NameMap) {
   // 把草稿 upsert 进映射表。
   try {
-    const result = await bridge.apiPost("group-name/save", {
+    const result = await apiPost<MessageResponse>("group-name/save", {
       items: nameDraftItems(names),
     });
     notice.success(result.message || "已保存群名");
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
 }
 
-function GroupTable(props) {
+// 群号表和添加框要用的状态与回调。
+interface GroupTableProps {
+  rows: SettingsRow[];
+  setRows: Dispatch<SetStateAction<SettingsRow[]>>;
+  columns: SettingsColumns;
+  newGroupId: string;
+  setNewGroupId: Dispatch<SetStateAction<string>>;
+  nameBusy: boolean;
+  onPullNames: () => void;
+  onSaveNames: () => void;
+}
+
+function GroupTable(props: GroupTableProps) {
   // 群号表和添加框。
   // message 从 useApp 取；静态 message 不跟随宿主明暗主题
   const { message } = AntdApp.useApp();
@@ -278,7 +358,13 @@ function GroupTable(props) {
   );
 }
 
-function ExtraFields(props) {
+// 非名单字段的表单和保存按钮。
+interface ExtraFieldsProps {
+  form: FormInstance<SettingsFormValues>;
+  onSave: () => void;
+}
+
+function ExtraFields(props: ExtraFieldsProps) {
   // 欢迎语、违禁、验证秒数等非名单字段。
   return (
     <Form form={props.form} layout="vertical">
@@ -332,21 +418,20 @@ export function SettingsView() {
   // 全局配置面板：表管功能开关，表单管文案秒数，群名单独拉和存。
   // message 从 useApp 取；静态 message 不跟随宿主明暗主题
   const { message } = AntdApp.useApp();
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<SettingsFormValues>();
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
+  const [rows, setRows] = useState<SettingsRow[]>([]);
+  const [names, setNames] = useState<NameMap>({});
   const [nameBusy, setNameBusy] = useState(false);
   const [newGroupId, setNewGroupId] = useState("");
-  const bridge = window.AstrBotPluginPage;
 
   useEffect(() => {
     let cancelled = false;
-    bootSettings(message, bridge, form, setRows, setNames, setLoading, () => cancelled);
+    bootSettings(message, form, setRows, setNames, setLoading, () => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [bridge, form]);
+  }, [message, form]);
 
   const columns = makeColumns(
     (groupId, key, checked) => toggleRowFeature(setRows, groupId, key, checked),
@@ -363,10 +448,10 @@ export function SettingsView() {
         setNewGroupId={setNewGroupId}
         columns={columns}
         nameBusy={nameBusy}
-        onPullNames={() => pullGroupNames(message, bridge, setNames, setNameBusy)}
-        onSaveNames={() => saveGroupNames(message, bridge, names)}
+        onPullNames={() => pullGroupNames(message, setNames, setNameBusy)}
+        onSaveNames={() => saveGroupNames(message, names)}
       />
-      <ExtraFields form={form} onSave={() => saveSettings(message, bridge, form, rows)} />
+      <ExtraFields form={form} onSave={() => saveSettings(message, form, rows)} />
     </Card>
   );
 }

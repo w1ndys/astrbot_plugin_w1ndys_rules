@@ -4,8 +4,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { App as AntdApp, Button, Card, Drawer, Input, Pagination, Select, Space, Table, Typography } from "antd";
+import type { TableProps } from "antd";
+import { apiPost, getBridge, readError } from "./bridge";
+import type {
+  BackfillResponse,
+  ForbiddenLogDetail,
+  ForbiddenLogListResponse,
+  ForbiddenLogRow,
+  GroupNameItem,
+  GroupNameListResponse,
+  LogPicture,
+  RosterFlags,
+  RosterResponse,
+} from "./types";
 
-const REASON_OPTIONS = [
+// 原因下拉项：value 是后端认的 reason_code。
+interface ReasonOption {
+  value: string;
+  label: string;
+}
+
+const REASON_OPTIONS: ReasonOption[] = [
   { value: "", label: "全部原因" },
   { value: "model", label: "文本模型" },
   { value: "group_card", label: "群名片" },
@@ -17,19 +36,46 @@ const REASON_OPTIONS = [
 const GLOBAL_SCOPE = "global";
 
 // 四个接口路径，和后端 _register_log_pages 注册的地址一致。
-const ROSTER_PATHS = {
+// 键由「名单名 + _add / _remove」拼成，所以这里按字符串下标存。
+const ROSTER_PATHS: Record<string, string> = {
   whitelist_add: "whitelist/add",
   whitelist_remove: "whitelist/remove",
   blacklist_add: "blacklist/add",
   blacklist_remove: "blacklist/remove",
 };
 
-function renderPictures(pictures) {
+// 名单按钮的两个维度：哪张名单、哪个范围。
+type RosterKind = "whitelist" | "blacklist";
+type RosterScope = "group" | "global";
+
+// 名单按钮只用到四个状态和身份字段，列表行和详情都满足。
+interface RosterTarget extends RosterFlags {
+  id: number;
+  group_id: string;
+  user_id: string;
+}
+
+// 点按钮时的加名单 / 移名单回调。
+type RosterToggle = (target: RosterTarget, kind: RosterKind, scope: RosterScope) => void;
+
+// 三个筛选条件，applied 是点「筛选」后真正生效的那份。
+interface LogFilter {
+  group_id: string;
+  user_id: string;
+  reason_code: string;
+}
+
+// 列定义数组；TableProps 里的类型带 undefined，拼不起来，这里去掉
+type LogColumns = NonNullable<TableProps<ForbiddenLogRow>["columns"]>;
+
+function renderPictures(pictures: LogPicture[]) {
   const items = pictures || [];
+  // 没有图就直接说明，不用给空列表
   if (!items.length) {
     return <p className="log-pic-fail">没有图片</p>;
   }
   return items.map((item, index) => {
+    // 采集成功才有 src，直接用 src 出图
     if (item && item.ok && item.src) {
       return <img key={String(index)} className="log-pic" src={item.src} alt="命中时保存的图" />;
     }
@@ -41,7 +87,8 @@ function renderPictures(pictures) {
   });
 }
 
-function renderJson(value) {
+function renderJson(value: unknown) {
+  // 空值当成没有 JSON 段
   if (value === undefined || value === null || value === "") {
     return <p className="log-json">没有 JSON 段</p>;
   }
@@ -50,7 +97,7 @@ function renderJson(value) {
 }
 
 // 四个名单按钮。查的是这一行自己的四个状态，点了就加或移。
-function rosterActions(target, busy, onToggle) {
+function rosterActions(target: RosterTarget, busy: boolean, onToggle: RosterToggle) {
   return (
     <Space wrap>
       <Button size="small" disabled={busy} onClick={() => onToggle(target, "whitelist", "group")}>
@@ -69,8 +116,8 @@ function rosterActions(target, busy, onToggle) {
   );
 }
 // 群名映射对照群号：没保存过的群显示空字符串，群号仍然照显示。
-function itemsToNameMap(items) {
-  const map = {};
+function itemsToNameMap(items: GroupNameItem[]): Record<string, string> {
+  const map: Record<string, string> = {};
   for (const item of items || []) {
     const groupId = String(item.group_id || "").trim();
     // 空群号对不上日志行
@@ -88,7 +135,7 @@ export function ForbiddenLogsView() {
   const [groupId, setGroupId] = useState("");
   const [userId, setUserId] = useState("");
   const [reasonCode, setReasonCode] = useState("");
-  const [applied, setApplied] = useState({
+  const [applied, setApplied] = useState<LogFilter>({
     group_id: "",
     user_id: "",
     reason_code: "",
@@ -96,20 +143,19 @@ export function ForbiddenLogsView() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<ForbiddenLogRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [detail, setDetail] = useState(null);
+  const [detail, setDetail] = useState<ForbiddenLogDetail | null>(null);
   // 正在请求的那一行，键是「群号:QQ」，避免重复点
   const [busyKey, setBusyKey] = useState("");
   // 群号到群名的映射，和欢迎语、关键词页读的是同一份
-  const [names, setNames] = useState({});
-  const bridge = window.AstrBotPluginPage;
+  const [names, setNames] = useState<Record<string, string>>({});
 
   const load = useCallback(
-    async (nextPage, nextSize, filter) => {
+    async (nextPage: number, nextSize: number, filter: LogFilter) => {
       setLoading(true);
       try {
-        const result = await bridge.apiPost("forbidden-log/list", {
+        const result = await apiPost<ForbiddenLogListResponse>("forbidden-log/list", {
           group_id: filter.group_id,
           user_id: filter.user_id,
           reason_code: filter.reason_code,
@@ -121,34 +167,35 @@ export function ForbiddenLogsView() {
         setPage(Number(result.page) || nextPage);
         setPageSize(Number(result.page_size) || nextSize);
       } catch (error) {
-        const text = error && error.message ? error.message : String(error);
-        message.error(text);
+        message.error(readError(error));
       }
       setLoading(false);
     },
-    [bridge],
+    [message],
   );
 
   useEffect(() => {
     let cancelled = false;
     async function boot() {
-      if (!bridge) {
-        message.error("页面桥接未就绪，请刷新后重试。");
+      // 没有官方桥接就读不出表
+      try {
+        getBridge();
+      } catch (error) {
+        message.error(readError(error));
         return;
       }
-      await bridge.ready();
+      // 卸载后不再写状态
       if (cancelled) {
         return;
       }
       try {
-        const mapped = await bridge.apiPost("group-name/list", {});
+        const mapped = await apiPost<GroupNameListResponse>("group-name/list", {});
         // 切走后丢掉映射结果
         if (!cancelled) {
           setNames(itemsToNameMap(mapped.items));
         }
       } catch (error) {
-        const text = error && error.message ? error.message : String(error);
-        message.error(text);
+        message.error(readError(error));
       }
       // 映射失败也要把日志表拉出来
       if (!cancelled) {
@@ -159,33 +206,33 @@ export function ForbiddenLogsView() {
     return () => {
       cancelled = true;
     };
-  }, [bridge, load]);
+  }, [message, load]);
 
-  async function openDetail(row) {
+  async function openDetail(row: ForbiddenLogRow) {
     try {
-      const result = await bridge.apiPost("forbidden-log/get", { id: row.id });
+      const result = await apiPost<ForbiddenLogDetail>("forbidden-log/get", { id: row.id });
       setDetail(result);
     } catch (error) {
-      const text = error && error.message ? error.message : String(error);
-      message.error(text);
+      message.error(readError(error));
     }
   }
 
   // 加或移一个范围的名单。范围只按按钮决定，行号只用来带 QQ 和判断本群状态。
-  async function toggleRoster(target, kind, scope) {
-    const field = scope === GLOBAL_SCOPE
+  async function toggleRoster(target: RosterTarget, kind: RosterKind, scope: RosterScope) {
+    const field: keyof RosterFlags = scope === GLOBAL_SCOPE
       ? (kind === "whitelist" ? "global_whitelisted" : "global_blacklisted")
       : (kind === "whitelist" ? "whitelisted" : "group_blacklisted");
     const path = ROSTER_PATHS[kind + (target[field] ? "_remove" : "_add")];
     setBusyKey(target.group_id + ":" + target.user_id);
     try {
-      const result = await bridge.apiPost(path, {
+      const result = await apiPost<RosterResponse>(path, {
         group_id: scope === GLOBAL_SCOPE ? GLOBAL_SCOPE : target.group_id,
         user_id: target.user_id,
         source_group_id: target.group_id,
       });
       message.success(result && result.message ? result.message : "已更新名单。");
       await load(page, pageSize, applied);
+      // 抽屉里正好是这一行时，四个状态跟着刷新
       if (detail && String(detail.id) === String(target.id)) {
         setDetail({
           ...detail,
@@ -196,8 +243,7 @@ export function ForbiddenLogsView() {
         });
       }
     } catch (error) {
-      const text = error && error.message ? error.message : String(error);
-      message.error(text);
+      message.error(readError(error));
     }
     setBusyKey("");
   }
@@ -205,23 +251,22 @@ export function ForbiddenLogsView() {
   // 手动回补空群昵称：只填空值，数据来自当前群成员资料。页面加载时不自动跑。
   async function backfillNicknames() {
     try {
-      const result = await bridge.apiPost("forbidden-log/backfill-nicknames", {});
+      const result = await apiPost<BackfillResponse>("forbidden-log/backfill-nicknames", {});
       message.success(result && result.message ? result.message : "已回补群昵称。");
       await load(page, pageSize, applied);
     } catch (error) {
-      const text = error && error.message ? error.message : String(error);
-      message.error(text);
+      message.error(readError(error));
     }
   }
 
-  const columns = [
+  const columns: LogColumns = [
     { title: "时间", dataIndex: "created_at", key: "created_at" },
     { title: "群号", dataIndex: "group_id", key: "group_id" },
     {
       title: "群名",
       key: "group_name",
       // 映射里没有这个群号就显示空，群号照显示
-      render: (_, row) => names[String(row.group_id)] || "",
+      render: (_value: unknown, row: ForbiddenLogRow) => names[String(row.group_id)] || "",
     },
     { title: "成员", dataIndex: "user_id", key: "user_id" },
     { title: "群昵称", dataIndex: "sender_name", key: "sender_name" },
@@ -229,7 +274,7 @@ export function ForbiddenLogsView() {
     {
       title: "操作",
       key: "action",
-      render: (_, row) => (
+      render: (_value: unknown, row: ForbiddenLogRow) => (
         <Space wrap>
           <Button type="link" onClick={() => openDetail(row)}>
             查看

@@ -2,19 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { App as AntdApp, ConfigProvider, Tabs, theme } from "antd";
-import { PAGE_TABS } from "./nav.js";
-import { SettingsView } from "./settings-view.jsx";
-import { WelcomeView } from "./welcome-view.jsx";
-import { KeywordsView } from "./keywords-view.jsx";
-import { ForbiddenTriggersView } from "./forbidden-triggers-view.jsx";
-import { ForbiddenTestView } from "./forbidden-test-view.jsx";
-import { ForbiddenLogsView } from "./forbidden-logs-view.jsx";
+import { PAGE_TABS } from "./nav";
+import { SettingsView } from "./settings-view";
+import { WelcomeView } from "./welcome-view";
+import { KeywordsView } from "./keywords-view";
+import { ForbiddenTriggersView } from "./forbidden-triggers-view";
+import { ForbiddenTestView } from "./forbidden-test-view";
+import { ForbiddenLogsView } from "./forbidden-logs-view";
 
-function readIsDark() {
+function readIsDark(): boolean {
+  // 宿主把主题放进 query；没给就跟随系统
   const params = new URLSearchParams(window.location.search);
+  // 明确给了暗色就按暗色
   if (params.get("theme") === "dark" || params.get("isDark") === "true") {
     return true;
   }
+  // 明确给了亮色就按亮色
   if (params.get("theme") === "light" || params.get("isDark") === "false") {
     return false;
   }
@@ -31,6 +34,7 @@ export default function App() {
   }, [isDark]);
 
   const items = PAGE_TABS.map((tab) => {
+    // 一个 key 对应一块业务，切走的面板销毁，避免带着旧值回显
     let children = null;
     if (tab.key === "settings") {
       children = <SettingsView />;
