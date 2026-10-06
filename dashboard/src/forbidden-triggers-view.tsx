@@ -2,12 +2,38 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { App as AntdApp, Button, Card, Input, Pagination, Space, Table } from "antd";
+import type { Dispatch, SetStateAction } from "react";
+import type { TableProps } from "antd";
+import { apiPost, getBridge, readError } from "./bridge";
+import type {
+  ForbiddenTriggerListResponse,
+  ForbiddenTriggerRow,
+  MessageResponse,
+} from "./types";
 
-async function loadRows(notice, bridge, nextPage, nextSize, query, setters) {
+// 只用到两个方法，避免深层导入 antd 的内部类型
+interface Notice {
+  success: (text: string) => void;
+  error: (text: string) => void;
+}
+
+// 拉一页要写的几个状态
+interface TriggerSetters {
+  setItems: Dispatch<SetStateAction<ForbiddenTriggerRow[]>>;
+  setTotal: Dispatch<SetStateAction<number>>;
+  setPage: Dispatch<SetStateAction<number>>;
+  setPageSize: Dispatch<SetStateAction<number>>;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+}
+
+// 列定义数组；TableProps 里的类型带 undefined，拼不起来，这里去掉
+type TriggerColumns = NonNullable<TableProps<ForbiddenTriggerRow>["columns"]>;
+
+async function loadRows(notice: Notice, nextPage: number, nextSize: number, query: string, setters: TriggerSetters) {
   // 拉一页触发词。
   setters.setLoading(true);
   try {
-    const result = await bridge.apiPost("forbidden-trigger/list", {
+    const result = await apiPost<ForbiddenTriggerListResponse>("forbidden-trigger/list", {
       q: query,
       page: nextPage,
       page_size: nextSize,
@@ -17,38 +43,35 @@ async function loadRows(notice, bridge, nextPage, nextSize, query, setters) {
     setters.setPage(Number(result.page) || nextPage);
     setters.setPageSize(Number(result.page_size) || nextSize);
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
   setters.setLoading(false);
 }
 
-async function saveRow(notice, bridge, content, oldContent, reload) {
+async function saveRow(notice: Notice, content: string, oldContent: string, reload: () => Promise<void>) {
   // 有旧词就改，没有就新增。
   try {
-    const result = await bridge.apiPost("forbidden-trigger/save", {
+    const result = await apiPost<MessageResponse>("forbidden-trigger/save", {
       content,
       old_content: oldContent,
     });
     notice.success(result.message || "已保存");
     await reload();
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
 }
 
-async function deleteRow(notice, bridge, content, reload) {
+async function deleteRow(notice: Notice, content: string, reload: () => Promise<void>) {
   // 按完整触发词删除。
   try {
-    const result = await bridge.apiPost("forbidden-trigger/delete", {
+    const result = await apiPost<MessageResponse>("forbidden-trigger/delete", {
       content,
     });
     notice.success(result.message || "已删除");
     await reload();
   } catch (error) {
-    const text = error && error.message ? error.message : String(error);
-    notice.error(text);
+    notice.error(readError(error));
   }
 }
 
@@ -61,27 +84,27 @@ export function ForbiddenTriggersView() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<ForbiddenTriggerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [content, setContent] = useState("");
   const [oldContent, setOldContent] = useState("");
-  const bridge = window.AstrBotPluginPage;
   const setters = { setItems, setTotal, setPage, setPageSize, setLoading };
 
   const load = useCallback(
-    (nextPage, nextSize, query) => loadRows(message, bridge, nextPage, nextSize, query, setters),
-    [bridge],
+    (nextPage: number, nextSize: number, query: string) => loadRows(message, nextPage, nextSize, query, setters),
+    [message],
   );
 
   useEffect(() => {
     let cancelled = false;
     async function boot() {
       // 没有官方桥接就读不出表
-      if (!bridge) {
-        message.error("页面桥接未就绪，请刷新后重试。");
+      try {
+        getBridge();
+      } catch (error) {
+        message.error(readError(error));
         return;
       }
-      await bridge.ready();
       // 卸载后不再拉表
       if (cancelled) {
         return;
@@ -92,18 +115,18 @@ export function ForbiddenTriggersView() {
     return () => {
       cancelled = true;
     };
-  }, [bridge, load]);
+  }, [message, load]);
 
   function reload() {
     return load(page, pageSize, applied);
   }
 
-  const columns = [
+  const columns: TriggerColumns = [
     { title: "触发词", dataIndex: "content", key: "content" },
     {
       title: "操作",
       key: "action",
-      render: (_, row) => (
+      render: (_value: unknown, row: ForbiddenTriggerRow) => (
         <Space>
           <Button
             type="link"
@@ -114,7 +137,7 @@ export function ForbiddenTriggersView() {
           >
             编辑
           </Button>
-          <Button type="link" danger onClick={() => deleteRow(message, bridge, row.content, reload)}>
+          <Button type="link" danger onClick={() => deleteRow(message, row.content, reload)}>
             删除
           </Button>
         </Space>
@@ -153,7 +176,7 @@ export function ForbiddenTriggersView() {
         <Button
           type="primary"
           onClick={async () => {
-            await saveRow(message, bridge, content, oldContent, reload);
+            await saveRow(message, content, oldContent, reload);
             setOldContent("");
             setContent("");
           }}

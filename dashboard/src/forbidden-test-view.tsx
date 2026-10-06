@@ -2,15 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Input, Select, Space } from "antd";
+import { apiPost, getBridge, readError } from "./bridge";
+import type { ForbiddenTestResult } from "./types";
 
-function formatResult(result) {
+// 三种试跑模式：文本、图片转写、二维码检出。
+type TestKind = "text" | "transcript" | "qr";
+
+// 模式下拉项：value 是后端认的 kind。
+interface TestKindOption {
+  value: TestKind;
+  label: string;
+}
+
+const TEST_KIND_OPTIONS: TestKindOption[] = [
+  { value: "text", label: "文本" },
+  { value: "transcript", label: "图片转写" },
+  { value: "qr", label: "二维码检出" },
+];
+
+function formatResult(result: ForbiddenTestResult): string {
   const status = result && result.status ? String(result.status) : "";
   const trigger = result && result.trigger ? String(result.trigger) : "";
   const message = result && result.message ? String(result.message) : "没有返回说明。";
   const lines = [message];
+  // 命中触发词才多一行触发词
   if (trigger) {
     lines.push("触发词：" + trigger);
   }
+  // 后端给了状态才多一行状态
   if (status) {
     lines.push("状态：" + status);
   }
@@ -18,48 +37,37 @@ function formatResult(result) {
 }
 
 export function ForbiddenTestView() {
-  const [kind, setKind] = useState("text");
+  const [kind, setKind] = useState<TestKind>("text");
   const [qrFound, setQrFound] = useState(false);
   const [text, setText] = useState("");
   const [output, setOutput] = useState("还没测。");
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  const bridge = window.AstrBotPluginPage;
 
   useEffect(() => {
-    let cancelled = false;
-    async function waitBridge() {
-      if (!bridge) {
-        setFailed(true);
-        setOutput("页面桥接未就绪，请刷新后重试。");
-        return;
-      }
-      await bridge.ready();
-      if (cancelled) {
-        return;
-      }
+    // 桥接取不到时先报失败，文案与原来一致；ready() 由 apiPost 内部等
+    try {
+      getBridge();
+    } catch (error) {
+      setFailed(true);
+      setOutput(readError(error));
     }
-    waitBridge();
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
+  }, []);
 
   async function runTest() {
     setLoading(true);
     setFailed(false);
     setOutput("测试中…");
     try {
-      const result = await bridge.apiPost("forbidden/test", {
+      const result = await apiPost<ForbiddenTestResult>("forbidden/test", {
         kind,
         text,
         qr_found: qrFound,
       });
       setOutput(formatResult(result));
     } catch (error) {
-      const msg = error && error.message ? error.message : String(error);
       setFailed(true);
-      setOutput("测试失败：" + msg);
+      setOutput("测试失败：" + readError(error));
     }
     setLoading(false);
   }
@@ -72,11 +80,7 @@ export function ForbiddenTestView() {
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         <Select
           value={kind}
-          options={[
-            { value: "text", label: "文本" },
-            { value: "transcript", label: "图片转写" },
-            { value: "qr", label: "二维码检出" },
-          ]}
+          options={TEST_KIND_OPTIONS}
           onChange={(value) => setKind(value)}
         />
         <Input.TextArea
