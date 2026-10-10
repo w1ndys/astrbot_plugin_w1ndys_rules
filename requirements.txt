@@ -1,3 +1,5 @@
 qreader
+opencv-contrib-python
+zxing-cpp
 rapidocr
 onnxruntime

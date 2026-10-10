@@ -98,16 +98,16 @@
     - 保留现有「不把 `qr_found` 发给 `forbidden/image-test`」的断言
     - 对应需求 4.6、4.7
 
-- [ ] 7. 更新依赖声明
-  - [ ] 7.1 在 `requirements.txt` 追加两行
+- [x] 7. 更新依赖声明
+  - [x] 7.1 在 `requirements.txt` 追加两行
     - 保留 `qreader`，追加不带版本号的 `opencv-contrib-python` 和 `zxing-cpp`
     - `rapidocr` 与 `onnxruntime` 不动
     - 对应需求 5.1、5.2
-  - [ ] 7.2 补依赖声明的测试
+  - [x] 7.2 补依赖声明的测试
     - `requirements.txt` 同时含 `qreader`、`opencv-contrib-python`、`zxing-cpp`
     - 对应需求 5.1、5.2
 
-- [ ] 8. 检查点 - 确保所有测试通过
+- [x] 8. 检查点 - 确保所有测试通过
   - 已跑 `cd tests && ../.venv/bin/python -m unittest`
   - 已跑 `ruff check .`
   - 前端构建由任务 6.2 完成
