@@ -1,4 +1,4 @@
-// 页面层：图片检测测试面板。结果来自本机 QReader 和 RapidOCR。不会撤回、禁言、发飞书或写日志。
+// 页面层：图片检测测试面板。结果来自三级本地解码（微信、zxing、QReader）和 RapidOCR。不会撤回、禁言、发飞书或写日志。
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Descriptions, Space, Upload } from "antd";
@@ -17,8 +17,14 @@ const ENGINE_READY = "ready";
 // 预检没过时后端给空对象，页面按这句显示，不能当成「已识别且无码」
 const NOT_INSPECTED = "本次未检测";
 
+// 某一层本次没走到时后端给空串，页面按这句显示，不能当成「这一层没装库」
+const LAYER_NOT_LOADED = "本次未加载";
+
 // 二维码引擎没加载时的固定文案，避免误读成图里没码
 const QR_ENGINE_MISSING = "二维码引擎未加载，本次未识别";
+
+// 引擎不是 ready 时，数量和载荷不能写成「未检出」或「本次未检测」
+const QR_COUNT_NOT_RECOGNIZED = "本次未识别";
 
 // OCR 引擎没加载时的固定文案，避免误读成识别过但没字
 const OCR_ENGINE_MISSING = "OCR 引擎未加载，本次未识别";
@@ -52,33 +58,80 @@ function engineText(engine: string, error: string | undefined): string {
   return engine;
 }
 
+// 二维码区的引擎状态行：总状态为空串说明这次根本没试到引擎，先补状态名再拼错误码
+function engineSummaryText(engine: string, error: string | undefined): string {
+  // 空串直接拼错误码会显示成「（bad_image）」，看不出状态，所以换成「本次未加载」
+  if (!engine) {
+    return engineText(LAYER_NOT_LOADED, error);
+  }
+  return engineText(engine, error);
+}
+
+// 分层状态：后端报空串说明本次没走到这一层，显示「本次未加载」，不写成 missing
+function layerStateText(state: string | undefined): string {
+  // 空串和缺失都算没加载过，直接把空串写出来会被读成「这一层没装库」
+  if (!state) {
+    return LAYER_NOT_LOADED;
+  }
+  return state;
+}
+
+// 命中层翻译成页面用词：微信、zxing、QReader 各自的名字，未检出写「无」
+function layerText(layer: string | undefined): string {
+  // 后端只报三个已知取值，其余（含空串和缺失）都当未检出
+  if (layer === "wechat") {
+    return "微信";
+  }
+  // zxing 的显示名就是库名，不翻译
+  if (layer === "zxing") {
+    return "zxing";
+  }
+  // QReader 同样用库名显示，方便和日志里对上
+  if (layer === "qreader") {
+    return "QReader";
+  }
+  return "无";
+}
+
+// 三个分层状态：ready 和非 ready 两支都要摆出来，抽一处免得两处写岔
+function qrLayerLines(qr: ImageQrDiagnosis): ResultLine[] {
+  return [
+    { key: "qr-wechat", label: "微信分层状态", children: layerStateText(qr.wechat) },
+    { key: "qr-zxing", label: "zxing 分层状态", children: layerStateText(qr.zxing) },
+    { key: "qr-qreader", label: "QReader 分层状态", children: layerStateText(qr.qreader) },
+  ];
+}
+
 // 二维码区要显示的几行。引擎没跑过或没加载时都必须写明没识别，不能显示成未检出。
 function qrLines(qr: ImageQrDiagnosis): ResultLine[] {
-  const engine = qr.engine || "";
-  // 没有引擎字段说明预检就没过，本次根本没跑引擎
-  if (!engine) {
+  // 字段缺失才是预检没过。空串是后端明确给的「这次没试到引擎」，不能和缺失混成一档
+  if (qr.engine === undefined) {
     return [
       { key: "qr-engine", label: "引擎状态", children: NOT_INSPECTED },
+      ...qrLayerLines(qr),
       { key: "qr-found", label: "是否检出", children: NOT_INSPECTED },
-      { key: "qr-box", label: "框数量", children: NOT_INSPECTED },
+      { key: "qr-box", label: "检出数量", children: NOT_INSPECTED },
       { key: "qr-payloads", label: "截断载荷", children: NOT_INSPECTED },
     ];
   }
-  // 引擎没加载：检出这行写固定文案，不拿空结果当「没有码」
-  if (engine !== ENGINE_READY) {
+  // missing、init_failed 和空串都不是 ready：检出写固定文案，数量和载荷写「本次未识别」
+  if (qr.engine !== ENGINE_READY) {
     return [
-      { key: "qr-engine", label: "引擎状态", children: engineText(engine, qr.error) },
+      { key: "qr-engine", label: "引擎状态", children: engineSummaryText(qr.engine, qr.error) },
+      ...qrLayerLines(qr),
       { key: "qr-found", label: "是否检出", children: QR_ENGINE_MISSING },
-      { key: "qr-box", label: "框数量", children: NOT_INSPECTED },
-      { key: "qr-payloads", label: "截断载荷", children: NOT_INSPECTED },
+      { key: "qr-box", label: "检出数量", children: QR_COUNT_NOT_RECOGNIZED },
+      { key: "qr-payloads", label: "截断载荷", children: QR_COUNT_NOT_RECOGNIZED },
     ];
   }
   // 载荷已由后端截断，页面原样展示，不再加工
   const payloads = qr.payloads && qr.payloads.length > 0 ? qr.payloads.join(" / ") : "无";
   return [
-    { key: "qr-engine", label: "引擎状态", children: engineText(engine, qr.error) },
+    { key: "qr-engine", label: "引擎状态", children: engineSummaryText(qr.engine, qr.error) },
+    ...qrLayerLines(qr),
     { key: "qr-found", label: "是否检出", children: qr.found ? "已检出" : "未检出" },
-    { key: "qr-box", label: "框数量", children: String(qr.box_count || 0) },
+    { key: "qr-layer", label: "命中层", children: layerText(qr.layer) },
+    { key: "qr-box", label: "检出数量", children: String(qr.box_count || 0) },
     { key: "qr-payloads", label: "截断载荷", children: payloads },
   ];
 }
@@ -188,7 +241,7 @@ export function ForbiddenImageTestView() {
   return (
     <Card title="图片检测测试">
       <p className="hint">
-        结果来自本机 QReader 和 RapidOCR。不会撤回、禁言、发飞书，也不写违禁日志。旧「违禁测试」页的二维码开关在本页不解码，本页的结论只认这张图。
+        结果来自三级本地解码（微信、zxing、QReader）和 RapidOCR。不会撤回、禁言、发飞书，也不写违禁日志。旧「违禁测试」页的二维码开关在本页不解码，本页的结论只认这张图。
       </p>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         <Upload

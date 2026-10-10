@@ -79,8 +79,8 @@
 - [x] 5. 检查点 - 确保所有测试通过
   - 确保所有测试通过，如有疑问请询问用户
 
-- [ ] 6. 更新图片检测测试页的二维码区
-  - [ ] 6.1 扩展 `dashboard/src/forbidden-image-test-view.tsx`
+- [x] 6. 更新图片检测测试页的二维码区
+  - [x] 6.1 扩展 `dashboard/src/forbidden-image-test-view.tsx`
     - `ImageQrDiagnosis` 增加 `wechat`、`zxing`、`qreader`、`layer` 四个可选字符串
     - 总状态为 `ready` 时展示引擎状态、三个分层状态、是否检出、命中层、检出数量、截断载荷
     - 命中层 `wechat` 显示「微信」，`zxing` 显示「zxing」，`qreader` 显示「QReader」，空字符串显示「无」
@@ -89,10 +89,10 @@
     - 总状态不是 `ready` 时仍显示「二维码引擎未加载，本次未识别」，并展示三个分层状态
     - 不改上传类型、8MB 上限，也不提交 `qr_found`
     - 对应需求 4.6、4.7、4.8；正确性：本次未加载不得显示成没装库
-  - [ ] 6.2 执行 `cd dashboard && npm run build`
+  - [x] 6.2 执行 `cd dashboard && npm run build`
     - 使 `pages/console/` 与源码一致
     - 对应需求 4.6
-  - [ ] 6.3 更新页面测试断言
+  - [x] 6.3 更新页面测试断言
     - 源码含「命中层」「检出数量」，不含「框数量」
     - `pages/console/assets/index.js` 含新增标签
     - 保留现有「不把 `qr_found` 发给 `forbidden/image-test`」的断言

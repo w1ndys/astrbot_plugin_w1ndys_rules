@@ -39,6 +39,15 @@ class ForbiddenImageTestPageSourceTest(unittest.TestCase):
         self.assertIn("本次未检测", js)
         self.assertIn("二维码引擎未加载，本次未识别", js)
 
+    def test_qr_area_shows_hit_layer_and_layer_states(self) -> None:
+        """二维码区报命中层和三个分层状态；本次没走到的层显示本次未加载。"""
+        js = (SRC / "forbidden-image-test-view.tsx").read_text()
+        self.assertIn("命中层", js)
+        self.assertIn("本次未加载", js)
+        # 标签改名：后端这个字段已经按命中层计数，不再是 QReader 的框数
+        self.assertIn("检出数量", js)
+        self.assertNotIn("框数量", js)
+
 
 class ForbiddenImageTestPageAssetTest(unittest.TestCase):
     """构建产物要和源码一致。"""
@@ -47,3 +56,9 @@ class ForbiddenImageTestPageAssetTest(unittest.TestCase):
         """pages/console 是构建后的单文件，重跑 npm run build 才会带上新 Tab。"""
         bundle = (PAGE / "assets" / "index.js").read_text()
         self.assertIn("图片检测测试", bundle)
+
+    def test_bundle_contains_qr_labels(self) -> None:
+        """构建产物也要带新的二维码标签，否则页面还停在旧「框数量」。"""
+        bundle = (PAGE / "assets" / "index.js").read_text()
+        self.assertIn("命中层", bundle)
+        self.assertIn("检出数量", bundle)
