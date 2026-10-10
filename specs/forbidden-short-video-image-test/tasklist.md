@@ -26,8 +26,8 @@
     - 不引入新的属性测试库；用现有 `unittest` 覆盖上述边界
     - 对应需求 4.1、4.2、4.3
 
-- [ ] 3. 实现图片检测测试的业务和接口
-  - [ ] 3.1 在 `business/forbidden_image.py` 增加 `inspect_uploaded_image`
+- [x] 3. 实现图片检测测试的业务和接口
+  - [x] 3.1 在 `business/forbidden_image.py` 增加 `inspect_uploaded_image`
     - 入参是图片字节，不接收 `qr_found`
     - 空字节、超过 8MB 返回错误状态，不调用引擎
     - gif 仍跑 OCR，并在 `note` 写明热路径对 gif 不跑 OCR
@@ -35,13 +35,13 @@
     - 提供商缺失时仍返回二维码和 OCR 字段
     - 不调用 `apply_hit_actions`，不写违禁日志
     - 对应需求 3.4、3.5、3.6、3.8、4.1、4.2；正确性：忽略调用方传入的 `qr_found`
-  - [ ] 3.2 在 `main.py` 注册 `POST /{PLUGIN_NAME}/forbidden/image-test`
+  - [x] 3.2 在 `main.py` 注册 `POST /{PLUGIN_NAME}/forbidden/image-test`
     - 放在现有 `_register_forbidden_page`
     - 请求体只取 `image_base64`，允许 data URL 前缀，入口剥掉后解码
     - 不是对象、坏 base64、解码后超过 8MB 返回 400
     - 入口只调业务层，不查库，不处置
     - 对应需求 3.4、3.8
-  - [ ] 3.3 为图片检测测试补单元测试
+  - [x] 3.3 为图片检测测试补单元测试
     - 注入无码图且请求体带 `qr_found: true` 时，响应仍为未检出
     - 无触发词时 `llm_called` 为否
     - 引擎缺失时页面业务返回的 `found` 为否

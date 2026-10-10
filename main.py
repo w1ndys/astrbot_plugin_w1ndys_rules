@@ -17,6 +17,7 @@
 # 本层只做「取群号 → 交给业务层 → 把文本返回」，判断与落库都在 business/。
 
 import asyncio
+import base64
 import time
 from pathlib import Path
 
@@ -42,7 +43,11 @@ from .business.forbidden_backfill import (
 )
 from .business.forbidden_forward import resolve_audit_text
 from .business.forbidden_handle import handle_forbidden_message
-from .business.forbidden_image import message_has_image, plan_image_test
+from .business.forbidden_image import (
+    inspect_uploaded_image,
+    message_has_image,
+    plan_image_test,
+)
 from .business.forbidden_judge import (
     complete_yes_no,
     plan_forbidden_test,
@@ -102,6 +107,7 @@ from .entity.constants import (
     BLACKLIST_GLOBAL_SCOPE,
     BLACKLIST_LIST_LIMIT,
     DB_FILE_NAME,
+    IMAGE_TEST_MAX_BYTES,
     PLUGIN_NAME,
     VERIFY_JOIN_MUTE_SECONDS,
     VERIFY_REMIND_TICK_SECONDS,
@@ -237,7 +243,7 @@ class RulesPlugin(Star):
             return
 
     def _register_forbidden_page(self) -> None:
-        """注册违禁词 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
+        """注册违禁词和图片检测的 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
         register = getattr(self.context, "register_web_api", None)
         # 没这个方法说明当前 AstrBot 还不支持插件 Pages
         if not callable(register):
@@ -247,6 +253,12 @@ class RulesPlugin(Star):
             self.page_forbidden_test,
             ["POST"],
             "违禁词测试",
+        )
+        register(
+            f"/{PLUGIN_NAME}/forbidden/image-test",
+            self.page_forbidden_image_test,
+            ["POST"],
+            "图片检测测试",
         )
 
     async def page_forbidden_test(self):
@@ -287,6 +299,30 @@ class RulesPlugin(Star):
         return json_response(
             test_result_payload(plan, judged.verdict, judged.reason)
         )
+
+    async def page_forbidden_image_test(self):
+        """WebUI 图片检测测试：上传字节过本机二维码和 OCR。不处置、不写日志。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出 image_base64
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        # 请求体里的 qr_found 一律不用：结论只认本机解码
+        data = _decode_image_base64(payload.get("image_base64"))
+        # 坏 base64 或解码后超 8MB 都不启动引擎，按坏请求回给页面
+        if data is None:
+            return error_response(
+                "image_base64 不是合法 base64，或解码后超过 8MB",
+                status_code=400,
+            )
+        result = await inspect_uploaded_image(
+            self.settings,
+            self.forbidden,
+            data,
+            get_provider=self._using_provider,
+        )
+        return json_response(result)
 
     def _register_keyword_pages(self) -> None:
         """注册关键词表接口。旧 AstrBot 没有这套 API 就跳过。"""
@@ -1370,3 +1406,22 @@ def _stop_llm(event: object) -> None:
     # 老版本 AstrBot 没有 stop_event，拦不住时就只发自己的回复
     if callable(stop):
         stop()
+
+
+def _decode_image_base64(raw: object) -> bytes | None:
+    """入口：请求体里的 image_base64 收成图片字节。没图、坏 base64、超 8MB 都返回 None。"""
+    text = str(raw or "")
+    # 没传图片就不解码，调用方按 400 回
+    if not text:
+        return None
+    # 页面用 FileReader 会给 data:image/png;base64,xxx，本机只取逗号后面的载荷
+    if text.startswith("data:"):
+        text = text.split(",", 1)[-1]
+    try:
+        data = base64.b64decode(text, validate=True)
+    except Exception:  # noqa: BLE001 - 坏 base64 当坏请求，不启动引擎
+        return None
+    # 解码后超限的大图不喂识别器，交回调用方按 400 处理
+    if len(data) > IMAGE_TEST_MAX_BYTES:
+        return None
+    return data
