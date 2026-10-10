@@ -1,6 +1,5 @@
 # 入口层提醒循环：记下 OneBot，扫到期 pending；没 bot 不发。热重载要取消任务。
 
-import asyncio
 import sys
 import tempfile
 import types
