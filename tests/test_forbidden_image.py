@@ -26,6 +26,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_image import (
 from astrbot_plugin_w1ndys_rules.data.forbidden_log_store import ForbiddenLogStore
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     CFG_FORBIDDEN_GROUPS,
+    FORBIDDEN_CFG_FEISHU_WEBHOOK,
     FORBIDDEN_CFG_GUIDELINE,
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_CFG_SAMPLES,
@@ -270,26 +271,37 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("外层消息文本", items[0].text)
 
     async def test_qr_hit_still_writes_message_str(self) -> None:
-        """二维码命中不请求模型，日志文本仍用外层 message_str。"""
+        """二维码命中不请求模型。日志保留外层消息，并附来源、解析内容和命中图。"""
         tmp = tempfile.TemporaryDirectory()
         store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
         event = FakeEvent()
         event.message_str = "外层消息文本"
+        posted = []
+        posted = []
+        config = ready_config()
+        config[FORBIDDEN_CFG_FEISHU_WEBHOOK] = "https://example.com/hook"
         handled, _reply = await handle_forbidden_message(
-            ready_config(),
+            config,
             FakeStore(),
             event,
             "123",
             "",
             self._provider("是"),
-            decoder=lambda data: True,
+            decoder=lambda data: ["https://qm.qq.com/q/abc"],
             log_store=store,
+            poster=lambda url, body: posted.append((url, body)),
         )
         items, total = store.list_page("", "", "", 0, 10)
         tmp.cleanup()
         self.assertTrue(handled)
         self.assertEqual(total, 1)
-        self.assertEqual(items[0].text, "外层消息文本")
+        self.assertIn("外层消息文本", items[0].text)
+        self.assertIn("来源：图片", items[0].text)
+        self.assertIn("二维码内容：https://qm.qq.com/q/abc", items[0].text)
+        self.assertIn("YQ==", items[0].images)
+        feishu = posted[0][1]["content"]["text"]
+        self.assertIn("来源：图片", feishu)
+        self.assertIn("二维码内容：https://qm.qq.com/q/abc", feishu)
 
 
 # sys.modules 里原本没有这个键时记下的哨兵，还原时按它决定删不删

@@ -109,6 +109,11 @@ FORBIDDEN_REASON_QRCODE = "qrcode"
 FORBIDDEN_REASON_IMAGE_MODEL = "image_model"
 # 飞书和日志里的二维码触发名。
 QRCODE_HIT = "图片含二维码"
+# 飞书和日志里的二维码来源。图片是消息里的原图，抽帧是短视频里触发的那一帧。
+QR_SOURCE_IMAGE = "图片"
+QR_SOURCE_VIDEO = "短视频抽帧"
+# 检出了码但没有非空文本时写进飞书和日志，避免把空内容当成没检。
+QR_CONTENT_EMPTY = "未解出文本"
 # 飞书和日志里的图片转写触发名。不是用户正文。
 IMAGE_TRANSCRIPT_HIT = "图片转写"
 # 模型第二行原因上限，避免飞书被长文刷屏。

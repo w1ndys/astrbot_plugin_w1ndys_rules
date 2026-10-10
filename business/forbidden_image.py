@@ -15,6 +15,7 @@ from ..entity.constants import (
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_QRCODE,
     IMAGE_TEST_MAX_BYTES,
+    QR_SOURCE_IMAGE,
     QRCODE_HIT,
 )
 from .forbidden_action import apply_hit_actions
@@ -25,7 +26,8 @@ from .forbidden_judge import (
     test_result_payload,
 )
 from .forbidden_ocr import ocr_diagnose_bytes, ocr_text_from_b64
-from .forbidden_qr import qr_diagnose_bytes, qr_found_in_b64
+from .forbidden_log import qr_log_images, qr_log_text, qr_notice_text
+from .forbidden_qr import qr_diagnose_bytes, qr_read_b64
 
 _STICKER_TYPES = {"Face", "Mface"}
 # gif 文件头只有这两种魔法数，测试页按它判断是否补 gif 说明
@@ -88,18 +90,24 @@ async def handle_forbidden_images(
         return False, ""
     names = ",".join(type(comp).__name__ for comp in comps)
     _log.info("[rules] image start group=%s comps=%s", group_id, names)
-    if await _qr_hit(comps, decoder):
+    hit = await _qr_hit(comps, decoder)
+    # 任一图检出就处置，不再 OCR，也不再叫模型
+    if hit is not None:
+        raw, payloads = hit
+        notice = qr_notice_text(QR_SOURCE_IMAGE, payloads)
         _log.info("[rules] image qr hit group=%s", group_id)
         remind = await apply_hit_actions(
             event,
             config,
             group_id,
             QRCODE_HIT,
-            QRCODE_HIT,
+            notice,
             poster,
             log_store,
             FORBIDDEN_REASON_QRCODE,
             mute_store=mute_store,
+            log_text=qr_log_text(str(getattr(event, "message_str", "") or ""), notice),
+            log_images=qr_log_images(raw),
         )
         return True, remind
     text = await _transcript_of(event, comps, transcribe, ocr)
@@ -260,16 +268,18 @@ def skip_vision(comp: object) -> bool:
     return loc.lower().endswith(".gif")
 
 
-async def _qr_hit(comps: list, decoder) -> bool:
-    """任一图解出二维码就命中。"""
+async def _qr_hit(comps: list, decoder) -> tuple | None:
+    """命中的原图 base64 和解析文本。没有命中返回 None。"""
     for comp in comps:
         raw = await _comp_b64(comp)
         # 转失败当这张未检出，看下一张
         if not raw:
             continue
-        if qr_found_in_b64(raw, decoder):
-            return True
-    return False
+        found, payloads = qr_read_b64(raw, decoder)
+        # 第一张检出就停，后面的图不再解码
+        if found:
+            return raw, payloads
+    return None
 
 
 async def _transcript_of(event: object, comps: list, transcribe, ocr=None) -> str:
