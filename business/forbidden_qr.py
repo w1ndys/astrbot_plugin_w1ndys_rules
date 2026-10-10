@@ -1,4 +1,5 @@
-# 业务层：本地二维码检出。用 QReader；没装或失败当未检出，不误禁。
+# 业务层：本地二维码检出。三级解码器懒加载（微信检测器、zxing-cpp、QReader），
+# 每层缺库或失败互不影响，当未检出，不误禁。
 # 检出即违禁，不看载荷。测试可传入 decoder。
 # 诊断结果只给测试页和日志用，热路径仍只看布尔。
 
@@ -19,12 +20,19 @@ from ..entity.constants import (
     ENGINE_READY,
 )
 
+# 第一级：微信检测器实例。没构造成功时留 None。
+_wechat = None
+# 第二级：zxing-cpp 模块。导入成功这一层就算就绪，它没有单独的权重对象。
+_zxing = None
+# 第三级：QReader 实例。没构造成功时留 None。
 _qreader = None
-_qreader_failed = False
-# 权重加载失败和没装库要分开报，页面才好判断漏检原因
-_qreader_init_failed = False
-# 引擎不可用的 warning 只记一次，避免每张图刷同一条日志
-_qreader_warned = False
+# 三层各自的加载状态，取值来自 ENGINE_*；空字符串表示这一层本进程还没试过，
+# 不能按 missing 报，否则页面会把「没走到这一级」看成「没装库」。
+_wechat_state = ""
+_zxing_state = ""
+_qreader_state = ""
+# 引擎总状态不是 ready 时的 warning 只记一次，避免每张图刷同一条日志。
+_engine_warned = False
 # 诊断返回的载荷每条截断 120 字，页面不展示整段二维码内容
 _PAYLOAD_MAX_LEN = 120
 # 载荷最多留 3 条，多了对定位漏检没帮助
@@ -65,9 +73,9 @@ def qr_found_in_b64(raw: str, decoder=None) -> bool:
 
 
 def _qreader_found(data: bytes) -> bool:
-    """用 QReader 检出即 True。库缺失或异常当未检出。"""
+    """用第三级 QReader 检出即 True。库缺失或异常当未检出。"""
     reader = _load_qreader()
-    # 没装 QReader 就跳过这一层，但要记一次引擎状态，免得漏检没有痕迹
+    # 这一层没起来就按引擎总状态记一次 warning，免得漏检没有痕迹
     if reader is None:
         _warn_engine_once()
         return False
@@ -81,27 +89,61 @@ def _qreader_found(data: bytes) -> bool:
         return False
 
 
-def _load_qreader():
-    """懒加载一个 QReader。导入失败只试一次。"""
-    global _qreader, _qreader_failed, _qreader_init_failed
-    # 已经确定没有这个库
-    if _qreader_failed:
+def _load_wechat():
+    """懒加载第一级微信检测器。缺 cv2.wechat_qrcode 当 missing，构造失败当 init_failed。"""
+    global _wechat, _wechat_state
+    # 这一层试过了就复用上次结论，状态的空串才是「还没试过」
+    if _wechat_state:
+        return _wechat
+    try:
+        from cv2 import wechat_qrcode
+    except ImportError:
+        # 装的是不带 contrib 的 OpenCV，缺这个子模块，这一层用不了
+        _wechat_state = ENGINE_MISSING
         return None
-    # 已经建过就复用
-    if _qreader is not None:
+    try:
+        # 无参构造用 contrib 自带模型，容器里 5.0.0 不需要传模型路径
+        _wechat = wechat_qrcode.WeChatQRCode()
+    except Exception:  # noqa: BLE001 - 模型构造失败只代表这一层不可用，别的层还要试
+        _wechat_state = ENGINE_INIT_FAILED
+        return None
+    _wechat_state = ENGINE_READY
+    return _wechat
+
+
+def _load_zxing():
+    """懒加载第二级 zxing-cpp。导入成功这一层就算就绪，导入失败当 missing。"""
+    global _zxing, _zxing_state
+    # 这一层试过了就复用上次结论
+    if _zxing_state:
+        return _zxing
+    try:
+        import zxingcpp
+    except ImportError:
+        _zxing_state = ENGINE_MISSING
+        return None
+    _zxing = zxingcpp
+    _zxing_state = ENGINE_READY
+    return _zxing
+
+
+def _load_qreader():
+    """懒加载第三级 QReader。导入失败当 missing，构造失败当 init_failed，都只试一次。"""
+    global _qreader, _qreader_state
+    # 这一层试过了就复用上次结论，不再重复导入和构造
+    if _qreader_state:
         return _qreader
     try:
         from qreader import QReader
     except ImportError:
-        _qreader_failed = True
+        _qreader_state = ENGINE_MISSING
         return None
     try:
         _qreader = QReader()
-    except Exception:  # noqa: BLE001 - 权重加载失败当没装
-        _qreader_failed = True
-        # 权重炸了要记下来，诊断才好报 init_failed
-        _qreader_init_failed = True
+    except Exception:  # noqa: BLE001 - 权重加载失败只代表这一层不可用，别的层还要试
+        _qreader_state = ENGINE_INIT_FAILED
         return None
+    _qreader_state = ENGINE_READY
     return _qreader
 
 
@@ -156,16 +198,26 @@ def _bytes_to_rgb(data: bytes):
 
 
 def qr_engine_state() -> str:
-    """当前二维码引擎状态。诊断字段和热路径日志都用它。"""
-    # 已经建好实例就是可用
-    if _qreader is not None:
+    """当前二维码引擎状态。会把还没试过的层补试一遍，诊断字段和日志都用它。"""
+    # 每层的结果在本进程复用，这里只是补跑还没试过的层
+    _load_wechat()
+    _load_zxing()
+    _load_qreader()
+    return _total_state(_tried_states())
+
+
+def _tried_states() -> list:
+    """已经试过的层状态。没试过的层留空串，页面才不会把「没走到」当成「没装库」。"""
+    return [state for state in (_wechat_state, _zxing_state, _qreader_state) if state]
+
+
+def _total_state(states: list) -> str:
+    """算引擎总状态：有 ready 就 ready，否则有 init_failed 就 init_failed，否则 missing。"""
+    # 任一层能用就算引擎可用，热路径据此继续解码
+    if ENGINE_READY in states:
         return ENGINE_READY
-    reader = _load_qreader()
-    # 这一次拿到实例也算可用
-    if reader is not None:
-        return ENGINE_READY
-    # 权重加载失败和没装库要分开报
-    if _qreader_init_failed:
+    # 有库能导入但都构造失败，问题在模型而不在依赖
+    if ENGINE_INIT_FAILED in states:
         return ENGINE_INIT_FAILED
     return ENGINE_MISSING
 
@@ -298,10 +350,15 @@ def _diag_result(
 
 
 def _warn_engine_once() -> None:
-    """引擎不可用时只记一次 warning，写明状态，免得漏检没有痕迹。"""
-    global _qreader_warned
+    """引擎总状态不是 ready 时只记一次 warning，写明状态，免得漏检没有痕迹。"""
+    global _engine_warned
     # 已经记过就不再刷
-    if _qreader_warned:
+    if _engine_warned:
         return
-    _qreader_warned = True
-    _log.warning("[rules] qr engine not ready state=%s", qr_engine_state())
+    # 只看已试过的层，不能为了报状态把没走到的后级提前加载
+    state = _total_state(_tried_states())
+    # 还有层能用就不算引擎不可用，这条 warning 不记
+    if state == ENGINE_READY:
+        return
+    _engine_warned = True
+    _log.warning("[rules] qr engine not ready state=%s", state)

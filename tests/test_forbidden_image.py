@@ -306,14 +306,20 @@ def _restore_module(name: str, saved: object) -> None:
 
 
 def save_engine_state() -> tuple:
-    """存下二维码、OCR 引擎缓存和本机包状态，测完还原。"""
+    """存下二维码三层、OCR 引擎缓存和本机包状态，测完还原。"""
     return (
+        forbidden_qr._wechat,
+        forbidden_qr._wechat_state,
+        forbidden_qr._zxing,
+        forbidden_qr._zxing_state,
         forbidden_qr._qreader,
-        forbidden_qr._qreader_failed,
-        forbidden_qr._qreader_init_failed,
+        forbidden_qr._qreader_state,
         forbidden_ocr._engine,
         forbidden_ocr._engine_failed,
         forbidden_ocr._engine_init_failed,
+        sys.modules.get("cv2", _MISSING),
+        sys.modules.get("cv2.wechat_qrcode", _MISSING),
+        sys.modules.get("zxingcpp", _MISSING),
         sys.modules.get("qreader", _MISSING),
         sys.modules.get("rapidocr", _MISSING),
         sys.modules.get("rapidocr_onnxruntime", _MISSING),
@@ -323,16 +329,25 @@ def save_engine_state() -> tuple:
 def restore_engine_state(saved: tuple) -> None:
     """把引擎缓存和包状态放回去。"""
     (
+        forbidden_qr._wechat,
+        forbidden_qr._wechat_state,
+        forbidden_qr._zxing,
+        forbidden_qr._zxing_state,
         forbidden_qr._qreader,
-        forbidden_qr._qreader_failed,
-        forbidden_qr._qreader_init_failed,
+        forbidden_qr._qreader_state,
         forbidden_ocr._engine,
         forbidden_ocr._engine_failed,
         forbidden_ocr._engine_init_failed,
+        cv2_module,
+        cv2_wechat_module,
+        zxing_module,
         qreader_module,
         rapidocr_module,
         rapidocr_old_module,
     ) = saved
+    _restore_module("cv2", cv2_module)
+    _restore_module("cv2.wechat_qrcode", cv2_wechat_module)
+    _restore_module("zxingcpp", zxing_module)
     _restore_module("qreader", qreader_module)
     _restore_module("rapidocr", rapidocr_module)
     _restore_module("rapidocr_onnxruntime", rapidocr_old_module)
@@ -340,12 +355,20 @@ def restore_engine_state(saved: tuple) -> None:
 
 def hide_local_engines() -> None:
     """藏掉本机引擎包并清缓存。测试不加载真模型，也不依赖本机装了什么。"""
+    # 三层都要藏，装上 contrib 或 zxing-cpp 的机器才有可能走到真实导入
+    forbidden_qr._wechat = None
+    forbidden_qr._wechat_state = ""
+    forbidden_qr._zxing = None
+    forbidden_qr._zxing_state = ""
     forbidden_qr._qreader = None
-    forbidden_qr._qreader_failed = False
-    forbidden_qr._qreader_init_failed = False
+    forbidden_qr._qreader_state = ""
     forbidden_ocr._engine = None
     forbidden_ocr._engine_failed = False
     forbidden_ocr._engine_init_failed = False
+    # 置 None 会让后续 import 抛 ImportError，等效于这台机器没装
+    sys.modules["cv2"] = None
+    sys.modules["cv2.wechat_qrcode"] = None
+    sys.modules["zxingcpp"] = None
     sys.modules["qreader"] = None
     sys.modules["rapidocr"] = None
     sys.modules["rapidocr_onnxruntime"] = None

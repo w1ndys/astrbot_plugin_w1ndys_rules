@@ -1,4 +1,5 @@
 # 二维码层：注入 decoder；坏图和异常当未检出，不误禁。
+# 三级引擎全部打桩，本机有没有 OpenCV contrib、zxing-cpp、QReader 都不影响结果。
 
 import sys
 import types
@@ -15,6 +16,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_qr import (
     _has_items,
     _reader_hit,
     qr_diagnose_bytes,
+    qr_engine_state,
     qr_found_in_b64,
     qr_found_in_bytes,
 )
@@ -34,7 +36,6 @@ class FakeReader:
     def detect_and_decode(self, image=None):
         """返回文本列表。"""
         return self.texts
-
 
 
 class QrFoundTest(unittest.TestCase):
@@ -81,12 +82,50 @@ class ReaderHitTest(unittest.TestCase):
 # sys.modules 里原本没有这个键时记下的哨兵，还原时按它决定删不删
 _MISSING = object()
 
+# 三级加载要导入的模块名。打桩和还原都按这份名单走。
+_ENGINE_MODULES = ("cv2", "cv2.wechat_qrcode", "zxingcpp", "qreader")
+
+
+def _hide_module(name: str) -> None:
+    """把模块占位成 None，import 直接失败，用来模拟本机没装这个库。"""
+    sys.modules[name] = None
+
+
+def _fake_module(name: str) -> types.ModuleType:
+    """造一个假模块塞进 sys.modules，用来模拟库已装好。"""
+    fake = types.ModuleType(name)
+    sys.modules[name] = fake
+    return fake
+
+
+def _fake_wechat_module(wechat_cls: object) -> None:
+    """造假 cv2 包和 cv2.wechat_qrcode 子模块，让微信层能导入成功。"""
+    fake_cv2 = _fake_module("cv2")
+    fake_wechat = _fake_module("cv2.wechat_qrcode")
+    fake_wechat.WeChatQRCode = wechat_cls
+    fake_cv2.wechat_qrcode = fake_wechat
+
 
 class _BoomQReader:
-    """建实例就炸的替身，模拟权重加载失败。"""
+    """建实例就炸的 QReader 替身，模拟权重加载失败。"""
 
     def __init__(self) -> None:
         raise RuntimeError("bad weights")
+
+
+class _BoomWeChat:
+    """建实例就炸的微信检测器替身，模拟 contrib 模型构造失败。"""
+
+    def __init__(self) -> None:
+        raise RuntimeError("bad model")
+
+
+class _FakeWeChat:
+    """能构造的微信检测器替身，代表容器里 contrib 装好了。"""
+
+    def __init__(self) -> None:
+        """无参构造成功，和容器的 WeChatQRCode() 一致。"""
+        self.created = True
 
 
 class _WarnLog:
@@ -100,42 +139,62 @@ class _WarnLog:
         self.warnings.append(template % args if args else template)
 
 
-class QrDiagnoseTest(unittest.TestCase):
-    """诊断结果：引擎状态和检出要分开报，别把没装库说成无码。"""
+class _EngineStubTest(unittest.TestCase):
+    """三级引擎缓存的公共打桩：测前全部藏掉，测完还原，免得污染别的测试。"""
 
     def setUp(self) -> None:
-        # 诊断读模块级缓存，先存旧值，测完还原，免得污染别的测试
+        # 实例、分层状态和 warning 标记都是模块级，先存旧值再清零
         self._saved = (
+            forbidden_qr._wechat,
+            forbidden_qr._wechat_state,
+            forbidden_qr._zxing,
+            forbidden_qr._zxing_state,
             forbidden_qr._qreader,
-            forbidden_qr._qreader_failed,
-            forbidden_qr._qreader_init_failed,
-            forbidden_qr._qreader_warned,
+            forbidden_qr._qreader_state,
+            forbidden_qr._engine_warned,
             forbidden_qr._bytes_to_rgb,
             forbidden_qr._log,
-            sys.modules.get("qreader", _MISSING),
         )
+        # 本机这几个包装没装也算环境状态，一并存下来
+        self._saved_modules = {
+            name: sys.modules.get(name, _MISSING) for name in _ENGINE_MODULES
+        }
         self._log = _WarnLog()
+        forbidden_qr._wechat = None
+        forbidden_qr._wechat_state = ""
+        forbidden_qr._zxing = None
+        forbidden_qr._zxing_state = ""
         forbidden_qr._qreader = None
-        forbidden_qr._qreader_failed = False
-        forbidden_qr._qreader_init_failed = False
-        forbidden_qr._qreader_warned = False
+        forbidden_qr._qreader_state = ""
+        forbidden_qr._engine_warned = False
         forbidden_qr._log = self._log
+        # 三级默认都当没装，哪一层要可用由各条测试自己放替身
+        for name in _ENGINE_MODULES:
+            _hide_module(name)
 
     def tearDown(self) -> None:
         (
+            forbidden_qr._wechat,
+            forbidden_qr._wechat_state,
+            forbidden_qr._zxing,
+            forbidden_qr._zxing_state,
             forbidden_qr._qreader,
-            forbidden_qr._qreader_failed,
-            forbidden_qr._qreader_init_failed,
-            forbidden_qr._qreader_warned,
+            forbidden_qr._qreader_state,
+            forbidden_qr._engine_warned,
             forbidden_qr._bytes_to_rgb,
             forbidden_qr._log,
-            saved_module,
         ) = self._saved
-        # 原来没装 qreader 就删掉，别把假模块留给后面的测试
-        if saved_module is _MISSING:
-            sys.modules.pop("qreader", None)
-            return
-        sys.modules["qreader"] = saved_module
+        for name in _ENGINE_MODULES:
+            saved = self._saved_modules[name]
+            # 本来没装的键要删掉，别把假模块留给后面的测试
+            if saved is _MISSING:
+                sys.modules.pop(name, None)
+                continue
+            sys.modules[name] = saved
+
+
+class QrDiagnoseTest(_EngineStubTest):
+    """诊断结果：引擎状态和检出要分开报，别把没装库说成无码。"""
 
     def test_decoder_boxes_ready_and_found(self) -> None:
         diag = qr_diagnose_bytes(b"xx", decoder=lambda _data: [{"x": 1}])
@@ -161,7 +220,9 @@ class QrDiagnoseTest(unittest.TestCase):
         self.assertEqual(diag["error"], "RuntimeError")
 
     def test_engine_ready_without_code(self) -> None:
+        # 第三级已有实例，分层状态也要跟着报 ready
         forbidden_qr._qreader = FakeReader(boxes=[], texts=[])
+        forbidden_qr._qreader_state = "ready"
         forbidden_qr._bytes_to_rgb = lambda _data: object()
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["engine"], "ready")
@@ -171,6 +232,7 @@ class QrDiagnoseTest(unittest.TestCase):
 
     def test_engine_ready_with_boxes(self) -> None:
         forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=[])
+        forbidden_qr._qreader_state = "ready"
         forbidden_qr._bytes_to_rgb = lambda _data: object()
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["engine"], "ready")
@@ -178,29 +240,89 @@ class QrDiagnoseTest(unittest.TestCase):
         self.assertEqual(diag["box_count"], 1)
 
     def test_import_failure_is_missing(self) -> None:
-        sys.modules["qreader"] = None
+        # 三级都没装，总状态只能报 missing
+        _hide_module("qreader")
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["engine"], "missing")
         self.assertFalse(diag["found"])
+        self.assertEqual(forbidden_qr._qreader_state, "missing")
 
     def test_init_failure_is_init_failed(self) -> None:
-        fake = types.ModuleType("qreader")
+        fake = _fake_module("qreader")
         fake.QReader = _BoomQReader
-        sys.modules["qreader"] = fake
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["engine"], "init_failed")
         self.assertFalse(diag["found"])
 
     def test_empty_bytes_not_found(self) -> None:
-        sys.modules["qreader"] = None
         diag = qr_diagnose_bytes(b"")
         self.assertFalse(diag["found"])
         self.assertEqual(diag["error"], "empty_image")
 
     def test_hot_path_warns_engine_once(self) -> None:
-        sys.modules["qreader"] = None
         qr_found_in_bytes(b"xx")
         qr_found_in_bytes(b"xx")
         # 每张图都记一条会刷屏，只认第一条
         self.assertEqual(len(self._log.warnings), 1)
         self.assertIn("missing", self._log.warnings[0])
+
+
+class QrEngineStateTest(_EngineStubTest):
+    """分层加载和总状态：一层不可用不能拖累别的层。"""
+
+    def test_wechat_missing_zxing_ready_is_ready(self) -> None:
+        # 微信层没装、QReader 也没装，只要 zxing 能用，总状态就是 ready
+        _hide_module("cv2")
+        _fake_module("zxingcpp")
+        self.assertEqual(qr_engine_state(), "ready")
+        self.assertEqual(forbidden_qr._wechat_state, "missing")
+        self.assertEqual(forbidden_qr._zxing_state, "ready")
+
+    def test_wechat_ready_when_contrib_present(self) -> None:
+        # cv2 带 contrib 时微信层就绪，构造出的实例被复用
+        _fake_wechat_module(_FakeWeChat)
+        self.assertIsNotNone(forbidden_qr._load_wechat())
+        self.assertEqual(forbidden_qr._wechat_state, "ready")
+        self.assertEqual(qr_engine_state(), "ready")
+
+    def test_all_layers_missing_is_missing(self) -> None:
+        # 三级导入都失败才算缺失，warning 每进程只记一条
+        self.assertEqual(qr_engine_state(), "missing")
+        self.assertEqual(forbidden_qr._qreader_state, "missing")
+        qr_found_in_bytes(b"xx")
+        qr_found_in_bytes(b"xx")
+        self.assertEqual(len(self._log.warnings), 1)
+        self.assertIn("state=missing", self._log.warnings[0])
+
+    def test_wechat_construct_failure_is_init_failed(self) -> None:
+        # 库导入成功但构造失败要报 init_failed，不能冤枉成没装库
+        _fake_wechat_module(_BoomWeChat)
+        self.assertIsNone(forbidden_qr._load_wechat())
+        self.assertEqual(forbidden_qr._wechat_state, "init_failed")
+        self.assertEqual(qr_engine_state(), "init_failed")
+
+    def test_one_layer_init_failure_keeps_other_ready(self) -> None:
+        # QReader 构造失败不影响 zxing 层，总状态仍算 ready
+        fake = _fake_module("qreader")
+        fake.QReader = _BoomQReader
+        _fake_module("zxingcpp")
+        self.assertIsNone(forbidden_qr._load_qreader())
+        self.assertEqual(forbidden_qr._qreader_state, "init_failed")
+        # 补试前两级之后 zxing 才有着落，总状态仍报 ready
+        self.assertEqual(qr_engine_state(), "ready")
+        self.assertEqual(forbidden_qr._zxing_state, "ready")
+
+    def test_load_result_reused_once(self) -> None:
+        # 一层失败后不再重试：后面放上真模块，这一层仍按上次结论回空
+        _hide_module("zxingcpp")
+        self.assertIsNone(forbidden_qr._load_zxing())
+        _fake_module("zxingcpp")
+        self.assertIsNone(forbidden_qr._load_zxing())
+        self.assertEqual(forbidden_qr._zxing_state, "missing")
+
+    def test_hot_path_leaves_later_layers_untried(self) -> None:
+        # 热路径现在只跑第三级，前两级没试过就留空串，不能报成没装库
+        qr_found_in_bytes(b"xx")
+        self.assertEqual(forbidden_qr._wechat_state, "")
+        self.assertEqual(forbidden_qr._zxing_state, "")
+        self.assertEqual(forbidden_qr._qreader_state, "missing")
