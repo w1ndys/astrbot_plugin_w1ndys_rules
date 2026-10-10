@@ -1,5 +1,6 @@
 # 短视频抽帧：时长分界、抽取点数、跳过原因，以及抽帧后的二维码、OCR、模型顺序。
 
+import base64
 import random
 import sys
 import tempfile
@@ -476,22 +477,24 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("reason=no_file" in line for line in captured.output))
 
     async def test_qr_hit_skips_ocr_and_model(self) -> None:
-        """任一帧检出二维码就按二维码处置，不再 OCR、不再叫模型。"""
+        """任一帧检出二维码就按二维码处置，不再 OCR、不再叫模型。日志存该帧和解析内容。"""
         tmp = tempfile.TemporaryDirectory()
         store = ForbiddenLogStore(Path(tmp.name) / "rules.db")
         provider = FakeProvider("是")
         ocr_calls: list = []
+        posted = []
         event = FakeEvent(segments=[video_segment(duration=3.5)])
         event.message_str = "外层消息文本"
         handled, _remind = await handle_forbidden_videos(
             event,
-            ready_config(),
+            ready_config(forbidden_feishu_webhook="https://example.com/hook"),
             "123",
             provider_getter(provider),
             log_store=store,
-            decoder=lambda _data: True,
+            decoder=lambda _data: ["https://qm.qq.com/q/frame"],
             ocr=ocr_calls.append,
             runner=FakeRunner(),
+            poster=lambda url, body: posted.append((url, body)),
         )
         items, total = store.list_page("", "", "", 0, 10)
         tmp.cleanup()
@@ -500,6 +503,12 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.calls, 0)
         self.assertEqual(total, 1)
         self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_QRCODE)
+        self.assertIn("来源：短视频抽帧", items[0].text)
+        self.assertIn("二维码内容：https://qm.qq.com/q/frame", items[0].text)
+        self.assertIn(base64.b64encode(FRAME_BYTES).decode("ascii"), items[0].images)
+        feishu = posted[0][1]["content"]["text"]
+        self.assertIn("来源：短视频抽帧", feishu)
+        self.assertIn("二维码内容：https://qm.qq.com/q/frame", feishu)
 
     async def test_transcript_without_trigger_skips_model(self) -> None:
         """帧都干净且转写没命中触发词时不叫模型。"""

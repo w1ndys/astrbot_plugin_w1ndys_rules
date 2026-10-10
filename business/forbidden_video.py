@@ -2,6 +2,7 @@
 # 超时长、时长未知、文件过大、缺抽帧工具都只记原因，不处置。
 # 帧走 ffmpeg 管道输出字节，本功能不写临时帧文件，所以没有要删的帧文件；协议端缓存也不动。
 
+import base64
 import inspect
 import random
 import subprocess
@@ -17,6 +18,7 @@ except ImportError:
 from ..entity.constants import (
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_QRCODE,
+    QR_SOURCE_VIDEO,
     QRCODE_HIT,
     SHORT_VIDEO_EVEN_RATIOS,
     SHORT_VIDEO_FRAME_SPLIT_MID,
@@ -32,8 +34,9 @@ from ..entity.constants import (
 from .forbidden_action import apply_hit_actions
 from .forbidden_image import plan_image_test
 from .forbidden_judge import complete_yes_no
+from .forbidden_log import qr_log_images, qr_log_text, qr_notice_text
 from .forbidden_ocr import ocr_text_from_bytes
-from .forbidden_qr import qr_found_in_bytes
+from .forbidden_qr import qr_read_bytes
 
 # 消息链里短视频段的类型名。合并转发段和文件段（mp4）都不是这个名字，因此不会被抽帧。
 _VIDEO_COMP_NAME = "Video"
@@ -187,6 +190,14 @@ async def handle_forbidden_videos(
         mute_store,
     )
 
+def _frame_b64(frame: bytes) -> str:
+    """把触发帧收成日志用的 base64。空字节留给日志函数写成保存失败。"""
+    # 空帧没有图可存
+    if not frame:
+        return ""
+    return base64.b64encode(frame).decode("ascii")
+
+
 async def _judge_frames(
     event: object,
     config: object,
@@ -202,19 +213,23 @@ async def _judge_frames(
 ) -> tuple[bool, str]:
     """帧的判定顺序：任一帧有条码就处置；都干净才转写、过触发词、叫一次模型。"""
     for frame in frames:
+        found, payloads = qr_read_bytes(frame, decoder)
         # 任一帧检出二维码就直接处置，不再认字也不再叫模型
-        if qr_found_in_bytes(frame, decoder):
+        if found:
+            notice = qr_notice_text(QR_SOURCE_VIDEO, payloads)
             _log.info("[rules] video qr hit group=%s", group_id)
             remind = await apply_hit_actions(
                 event,
                 config,
                 group_id,
                 QRCODE_HIT,
-                QRCODE_HIT,
+                notice,
                 poster,
                 log_store,
                 FORBIDDEN_REASON_QRCODE,
                 mute_store=mute_store,
+                log_text=qr_log_text(str(getattr(event, "message_str", "") or ""), notice),
+                log_images=qr_log_images(_frame_b64(frame)),
             )
             return True, remind
     transcript = _frames_transcript(frames, ocr)

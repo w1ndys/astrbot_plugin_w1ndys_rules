@@ -59,20 +59,67 @@ _LAYER_QREADER = "qreader"
 
 def qr_found_in_bytes(data: bytes, decoder=None) -> bool:
     """这组字节里有没有二维码。decoder 命中就 True。"""
+    return qr_read_bytes(data, decoder)[0]
+
+
+def qr_read_bytes(data: bytes, decoder=None) -> tuple:
+    """返回是否检出，以及截断后的解析文本。有框没文本时仍检出，文本列表为空。"""
     # 空图解不了，三级都不加载
     if not data:
-        return False
+        return False, []
     # 测试注入，不打真实三级引擎
     if decoder is not None:
         try:
-            return bool(decoder(data))
+            return _decoder_read(decoder(data))
         except Exception:  # noqa: BLE001 - 注入解码失败当未检出
-            return False
+            return False, []
     image = _bgr_from_bytes(data)
-    # 解不出 BGR 就不是图片，三级都不调用，也不把「图坏了」记成引擎没装
+    # 解不出 BGR 就不是图片，三级都不调用
     if image is None:
-        return False
-    return _three_layer_hit(image)
+        return False, []
+    return _read_from_image(image)
+
+
+def qr_read_b64(raw: str, decoder=None) -> tuple:
+    """base64 图的检出和解析文本。前缀已在采集时剥掉。"""
+    text = (raw or "").strip()
+    # 空串解不出图
+    if not text:
+        return False, []
+    pad = (-len(text)) % 4
+    # 协议端常省略末尾 =
+    if pad:
+        text = text + ("=" * pad)
+    try:
+        data = base64.b64decode(text, validate=False)
+    except Exception:  # noqa: BLE001 - 坏 base64 当未检出，继续转写
+        return False, []
+    return qr_read_bytes(data, decoder)
+
+
+def _decoder_read(result: object) -> tuple:
+    """替身返回值收成检出和文本。True 表示有码但没有解析内容。"""
+    payloads = _payload_list(_decoder_texts(result))
+    # 布尔 True 或框列表仍然算检出，文本另收
+    return bool(result), payloads
+
+
+def _decoder_texts(result: object) -> list:
+    """从替身返回里抽出文本。布尔和框对象不是解析内容。"""
+    if isinstance(result, (str, bytes)):
+        return [result]
+    if isinstance(result, (list, tuple)):
+        return [item for item in result if isinstance(item, str)]
+    return []
+
+
+def _read_from_image(image) -> tuple:
+    """走一遍三级诊断，带出命中层的截断文本。未检出时按引擎状态记一次 warning。"""
+    diag = _diagnose_three_layers(image)
+    # 三级都没检出时，引擎不可用要留一条痕迹，和原来的热路径一致
+    if not diag["found"]:
+        _warn_engine_once()
+    return bool(diag["found"]), list(diag["payloads"])
 
 
 
