@@ -125,6 +125,39 @@ export interface ForbiddenTestResult {
   reason: string;
 }
 
+// 图片检测测试的二维码诊断：引擎总状态、三个分层状态、命中层、是否检出、检出数量和截断载荷。预检没过时后端给空对象。
+export interface ImageQrDiagnosis {
+  engine?: string;
+  wechat?: string;
+  zxing?: string;
+  qreader?: string;
+  layer?: string;
+  found?: boolean;
+  box_count?: number;
+  payloads?: string[];
+  error?: string;
+}
+
+// 图片检测测试的 OCR 诊断：引擎状态、识别文字和错误。预检没过时后端给空对象。
+export interface ImageOcrDiagnosis {
+  engine?: string;
+  text?: string;
+  error?: string;
+}
+
+// forbidden/image-test 的返回：二维码、OCR、触发词、送模型与否和模型结论。gif 时多一个 note。
+export interface ImageTestResult {
+  qr: ImageQrDiagnosis;
+  ocr: ImageOcrDiagnosis;
+  trigger: string;
+  plan_status: string;
+  llm_called: boolean;
+  verdict: string;
+  reason: string;
+  message: string;
+  note?: string;
+}
+
 // 六个功能名单的配置键，和后端 constants 的 SETTING_LIST_KEYS 一致。
 export type FeatureKey =
   | "keyword_groups"

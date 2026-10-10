@@ -1,0 +1,19 @@
+[tool.ruff]
+# 行宽与目标版本对齐同作者的 AstrBot 插件。只影响 ruff，不改变插件运行时依赖。
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# 默认 pyflakes / pycodestyle 子集，再加契约里的两条：禁止裸 except，限制函数语句数。
+# E402 留在默认集里。测试必须先改 sys.path 再导入，所以只在 tests 下忽略这一条。
+select = ["E4", "E7", "E9", "F", "E722", "S110", "PLR0915"]
+# 协议端和模型抛出的异常类型不固定。捕获 Exception 后当未检出或跳过，文件里已有原因注释。
+ignore = ["BLE001"]
+
+[tool.ruff.lint.pylint]
+# PLR0915 数的是语句，不是「去掉空行和注释后的行数」。50 是契约上限的可执行近似。
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+# 测试在导入插件前把仓库父目录放进 sys.path。这是现有加载方式，不改成安装包。
+"tests/**/*.py" = ["E402"]

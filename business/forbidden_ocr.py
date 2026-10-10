@@ -11,8 +11,16 @@ except ImportError:
 
     _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
+from ..entity.constants import (
+    ENGINE_INIT_FAILED,
+    ENGINE_MISSING,
+    ENGINE_READY,
+)
+
 _engine = None
 _engine_failed = False
+# 权重加载失败和没装库要分开报，页面才好区分「没装」和「没字」
+_engine_init_failed = False
 
 
 def ocr_text_from_b64(raw: str, reader=None) -> str:
@@ -70,7 +78,7 @@ def _rapid_ocr(data: bytes) -> str:
 
 def _load_engine():
     """懒加载 RapidOCR。导入失败只试一次。"""
-    global _engine, _engine_failed
+    global _engine, _engine_failed, _engine_init_failed
     # 已经确定没有这个库
     if _engine_failed:
         return None
@@ -87,6 +95,8 @@ def _load_engine():
         _engine = builder()
     except Exception:  # noqa: BLE001 - 权重加载失败当没装
         _engine_failed = True
+        # 权重炸了要记下来，诊断才好报 init_failed
+        _engine_init_failed = True
         _log.warning("[rules] ocr engine init failed")
         return None
     return _engine
@@ -160,3 +170,55 @@ def _texts_from_rows(rows: list) -> list:
         if isinstance(row, (list, tuple)) and len(row) >= 2:
             texts.append(row[1])
     return texts
+
+
+def ocr_engine_state() -> str:
+    """当前 OCR 引擎状态。诊断字段用，热路径不看它。"""
+    # 已经建好实例就是可用
+    if _engine is not None:
+        return ENGINE_READY
+    built = _load_engine()
+    # 这一次拿到实例也算可用
+    if built is not None:
+        return ENGINE_READY
+    # 权重加载失败和没装库要分开报
+    if _engine_init_failed:
+        return ENGINE_INIT_FAILED
+    return ENGINE_MISSING
+
+
+def ocr_diagnose_bytes(data: bytes, reader=None) -> dict:
+    """测试页用的 OCR 诊断：引擎状态、文字和错误。热路径仍用 ocr_text_from_bytes。"""
+    # 空图不喂引擎也不叫替身，直接报没字
+    if not data:
+        return _diag_result(ocr_engine_state(), "", "empty_image")
+    # 测试注入替身，不算真实引擎，按 ready 报
+    if reader is not None:
+        try:
+            text = _join_texts(reader(data))
+        except Exception as exc:  # noqa: BLE001 - 替身异常当没字，不误禁
+            return _diag_result(ENGINE_READY, "", type(exc).__name__)
+        return _diag_result(ENGINE_READY, text, "")
+    engine = ocr_engine_state()
+    # 引擎缺失就报状态，页面据此区分「没装」和「没字」
+    if engine != ENGINE_READY:
+        return _diag_result(engine, "", "")
+    return _ocr_diagnose_with_engine(engine, data)
+
+
+def _ocr_diagnose_with_engine(engine: str, data: bytes) -> dict:
+    """真实 RapidOCR 路径：认字失败只带类型名。"""
+    engine_obj = _load_engine()
+    # 加载失败就按当前状态报
+    if engine_obj is None:
+        return _diag_result(ocr_engine_state(), "", "")
+    try:
+        result = engine_obj(data)
+    except Exception as exc:  # noqa: BLE001 - 推理失败当没字，不误禁
+        return _diag_result(engine, "", type(exc).__name__)
+    return _diag_result(engine, _join_texts(result), "")
+
+
+def _diag_result(engine: str, text: str, error: str) -> dict:
+    """拼 OCR 诊断结果。字段名和测试页约定一致。"""
+    return {"engine": engine, "text": text, "error": error}

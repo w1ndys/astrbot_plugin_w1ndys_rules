@@ -1,0 +1,121 @@
+# 需求实施计划
+
+- [x] 1. 写入短视频和图片测试的固定值
+  - [x] 1.1 在 `entity/constants.py` 增加设计文档列出的常量
+    - 含时长上限、帧数分界、随机区间、最小间隔、重试次数、20MB、8 秒超时、8MB 上传上限
+    - 等分兜底比例也写成具名常量：1 帧 50%；2 帧 25%、75%；3 帧 20%、50%、80%
+    - 每个常量写明单位和为什么取这个值
+    - 对应需求 1.1、1.4、1.6、3.2
+
+- [x] 2. 让二维码和 OCR 能区分「没加载」和「没检出」
+  - [x] 2.1 在 `business/forbidden_qr.py` 增加诊断结果
+    - 保留 `qr_found_in_b64` 的布尔语义，热路径继续用它
+    - 诊断含 `engine`、`found`、`box_count`、`payloads`、`error`
+    - `payloads` 每条截断到 120 字，最多 3 条
+    - 引擎不是 `ready` 时 `found` 为否
+    - 热路径第一次发现引擎不是 `ready` 时记录一次 warning，不每张图重复导入
+    - 对应需求 4.1、4.2、4.3、4.4；正确性：引擎不可用不得显示成已识别且无码
+  - [x] 2.2 在 `business/forbidden_ocr.py` 增加诊断结果
+    - 返回 `engine`、`text`、`error`
+    - 热路径仍用 `ocr_text_from_bytes`；引擎缺失的现有 warning 保留
+    - 对应需求 3.5
+  - [x] 2.3 为诊断结果补单元测试
+    - 有框或有载荷时 `found` 为是且 `engine` 为 `ready`
+    - 空结果且引擎可加载时 `found` 为否、`engine` 仍为 `ready`
+    - 导入失败为 `missing`，初始化失败为 `init_failed`，两者 `found` 都为否
+    - 不引入新的属性测试库；用现有 `unittest` 覆盖上述边界
+    - 对应需求 4.1、4.2、4.3
+
+- [x] 3. 实现图片检测测试的业务和接口
+  - [x] 3.1 在 `business/forbidden_image.py` 增加 `inspect_uploaded_image`
+    - 入参是图片字节，不接收 `qr_found`
+    - 空字节、超过 8MB 返回错误状态，不调用引擎
+    - gif 仍跑 OCR，并在 `note` 写明热路径对 gif 不跑 OCR
+    - 转写走现有 `plan_image_test`；`ready` 且有提供商才调用一次模型
+    - 提供商缺失时仍返回二维码和 OCR 字段
+    - 不调用 `apply_hit_actions`，不写违禁日志
+    - 对应需求 3.4、3.5、3.6、3.8、4.1、4.2；正确性：忽略调用方传入的 `qr_found`
+  - [x] 3.2 在 `main.py` 注册 `POST /{PLUGIN_NAME}/forbidden/image-test`
+    - 放在现有 `_register_forbidden_page`
+    - 请求体只取 `image_base64`，允许 data URL 前缀，入口剥掉后解码
+    - 不是对象、坏 base64、解码后超过 8MB 返回 400
+    - 入口只调业务层，不查库，不处置
+    - 对应需求 3.4、3.8
+  - [x] 3.3 为图片检测测试补单元测试
+    - 注入无码图且请求体带 `qr_found: true` 时，响应仍为未检出
+    - 无触发词时 `llm_called` 为否
+    - 引擎缺失时页面业务返回的 `found` 为否
+    - 对应需求 3.4、3.6、4.3；正确性：测试接口忽略 `qr_found`
+
+- [x] 4. 检查点 - 确保所有测试通过
+  - 确保所有测试通过，如有疑问请询问用户
+
+- [x] 5. 实现短视频抽帧和热路径判定
+  - [x] 5.1 新建 `business/forbidden_video.py`，先做时长和抽帧
+    - `video_comps` 只收类型名 `Video` 的段
+    - `raw_video_meta` 从原始消息段读 `duration` 和 `file_size`，不从 `Video` 组件读
+    - `frame_count_for`：不足 0.8 秒 1 帧，不足 2.0 秒 2 帧，2.0 到 4.0 秒 3 帧
+    - `pick_timestamps` 在 5% 到 95% 间随机，间隔至少为时长的 1/6，最多重试 8 次，失败改等分点
+    - 时长大于 4.0、时长未知、`file_size` 大于 20MB、缺 `ffmpeg`/`ffprobe`、单次命令超过 8 秒，都跳过并记录原因，不处置
+    - `ffprobe` 和 `ffmpeg` 通过可注入的 runner 调用；抽帧输出 PNG 字节，不用封面
+    - 只删除本功能写出的临时帧文件，不删除协议端缓存
+    - 对应需求 1.1、1.2、1.3、1.4、1.5、1.6；正确性：4.0 含边界，4.01 不抽帧，帧数只由时长决定
+  - [x] 5.2 在同一文件实现 `handle_forbidden_videos`
+    - 没有 `Video` 段返回未处置
+    - 全部可抽帧先走现有 `qr_found_in_bytes`；任一帧命中就 `apply_hit_actions`，原因 `FORBIDDEN_REASON_QRCODE`，文案用 `QRCODE_HIT`，不再 OCR、不再叫模型
+    - 都未命中时用现有 `ocr_text_from_bytes` 拼转写，再走 `plan_image_test`
+    - `ready` 时只调用一次 `complete_yes_no`；只有 `yes` 才处置，原因 `FORBIDDEN_REASON_IMAGE_MODEL`
+    - 送审用户文本第一行是「来源: 短视频抽帧」，二维码行写「未检出」
+    - 模型「否」或无法解析时不处置
+    - 不检测合并转发里的视频，不检测文件段里的 mp4
+    - 对应需求 2.1、2.2、2.3、2.4、2.5、2.6、2.7
+  - [x] 5.3 在 `business/forbidden_handle.py` 于图片路未处置后调用短视频处理
+    - 图片路已处置则不下载视频
+    - 功能未开启、群管、白名单跳过这些现有条件继续挡在前面，短视频不再单独开入口
+    - `main.py` 不新增群消息过滤器
+    - 对应需求 2.8；正确性：跳过条件对短视频同样生效，一条消息最多一次模型调用
+  - [x] 5.4 为抽帧数量、时间点和跳过原因补单元测试
+    - 4.0 秒抽帧，4.01 秒不抽帧
+    - 0.5 秒 1 点，1.5 秒 2 点，3.5 秒 3 点
+    - 注入过近的随机序列时，第 8 次后落到等分点
+    - 时长未知、文件过大、工具缺失各自不处置
+    - 不依赖本机 ffmpeg，不新增测试库
+    - 对应需求 1.1、1.2、1.3、1.4、1.5
+  - [x] 5.5 为短视频判定顺序补单元测试
+    - 任一帧二维码命中时，OCR 和模型替身不被调用，原因是二维码
+    - 转写无触发词时不调用模型
+    - 转写有触发词且模型返回「是」时只调用一次，用户文本以「来源: 短视频抽帧」开头
+    - 功能未开启、群管、白名单跳过时不调用抽帧替身
+    - 图片路已处置时不调用短视频处理
+    - 对应需求 2.1、2.2、2.4、2.5、2.6、2.8
+
+- [x] 6. 检查点 - 确保所有测试通过
+  - 确保所有测试通过，如有疑问请询问用户
+
+- [x] 7. 增加图片检测测试页
+  - [x] 7.1 在 `dashboard/src/nav.ts` 和 `dashboard/src/App.tsx` 增加页内 Tab
+    - key 为 `forbidden-image-test`，label 为「图片检测测试」，放在 `forbidden-test` 后面
+    - 不新增顶层路由，不改旧「违禁测试」页的三种试跑和 `qr_found` 开关
+    - 对应需求 3.1
+  - [x] 7.2 新建 `dashboard/src/forbidden-image-test-view.tsx`
+    - 说明文案写明结果来自本机 QReader 和 RapidOCR，不处置、不写日志，旧开关不解码
+    - 只接受 png、jpeg、webp、gif，且不超过 8MB；不合规则显示原因且不发请求
+    - 选择后预览；没有预览或请求进行中时「检测」不可用
+    - 请求体只提交图片 base64，不提交 `qr_found`
+    - 分项展示引擎状态、是否检出、框数量、截断载荷、OCR 文本、触发词、是否送模型、模型结论
+    - 引擎不是 `ready` 时固定显示「二维码引擎未加载，本次未识别」
+    - 对应需求 3.2、3.3、3.4、3.5、3.6、3.7
+  - [x] 7.3 执行 `cd dashboard && npm run build`
+    - 使 `pages/console/` 与源码一致
+    - 对应需求 3.1
+  - [x] 7.4 为页面源码和构建产物补测试
+    - 源码含新 Tab、8MB 限制，且不把 `qr_found` 发给 `forbidden/image-test`
+    - `pages/console/assets/index.js` 含「图片检测测试」
+    - 更新 `tests/test_pages_nav.py` 里已有的 Tab 断言，避免旧断言把新 Tab 判失败
+    - 对应需求 3.1、3.3、3.4
+
+- [x] 8. 检查点 - 确保所有测试通过
+  - 已跑 `cd tests && ../.venv/bin/python -m unittest`，517 项通过
+  - 前端构建由任务 7.3 的 `cd dashboard && npm run build` 完成
+  - 已跑 `ruff check .`，通过
+  - 确保所有测试通过，如有疑问请询问用户

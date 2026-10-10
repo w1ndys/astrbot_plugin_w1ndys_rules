@@ -1,4 +1,4 @@
-// 页面层：插件页外壳。六块业务放进页内 Tab，切换只改 React state，不动顶层 hash。
+// 页面层：插件页外壳。七块业务放进页内 Tab，切换只改 React state，不动顶层 hash。
 
 import { useEffect, useMemo, useState } from "react";
 import { App as AntdApp, ConfigProvider, Tabs, theme } from "antd";
@@ -8,6 +8,7 @@ import { WelcomeView } from "./welcome-view";
 import { KeywordsView } from "./keywords-view";
 import { ForbiddenTriggersView } from "./forbidden-triggers-view";
 import { ForbiddenTestView } from "./forbidden-test-view";
+import { ForbiddenImageTestView } from "./forbidden-image-test-view";
 import { ForbiddenLogsView } from "./forbidden-logs-view";
 
 function readIsDark(): boolean {
@@ -46,6 +47,8 @@ export default function App() {
       children = <ForbiddenTriggersView />;
     } else if (tab.key === "forbidden-test") {
       children = <ForbiddenTestView />;
+    } else if (tab.key === "forbidden-image-test") {
+      children = <ForbiddenImageTestView />;
     } else if (tab.key === "forbidden-logs") {
       children = <ForbiddenLogsView />;
     }

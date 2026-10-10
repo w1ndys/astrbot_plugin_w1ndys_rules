@@ -14,6 +14,8 @@ except ImportError:
 from ..entity.constants import (
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_QRCODE,
+    IMAGE_TEST_MAX_BYTES,
+    QR_SOURCE_IMAGE,
     QRCODE_HIT,
 )
 from .forbidden_action import apply_hit_actions
@@ -21,11 +23,19 @@ from .forbidden_judge import (
     ForbiddenTestPlan,
     complete_yes_no,
     plan_forbidden_test,
+    test_result_payload,
 )
-from .forbidden_ocr import ocr_text_from_b64
-from .forbidden_qr import qr_found_in_b64
+from .forbidden_ocr import ocr_diagnose_bytes, ocr_text_from_b64
+from .forbidden_log import qr_log_images, qr_log_text, qr_notice_text
+from .forbidden_qr import qr_diagnose_bytes, qr_read_b64
 
 _STICKER_TYPES = {"Face", "Mface"}
+# gif 文件头只有这两种魔法数，测试页按它判断是否补 gif 说明
+_GIF_MAGIC = (b"GIF87a", b"GIF89a")
+# 热路径把 gif 当表情雨跳过 OCR，测试页为了核对文字仍识别，用这句写明差别
+GIF_OCR_NOTE = "热路径对 gif 不跑 OCR，本页为核对文字仍识别"
+# 没有对话提供商时页面要能看懂：二维码和 OCR 已经跑过，只是模型这一步没跑
+_NO_PROVIDER_MESSAGE = "当前没有可用的对话提供商，二维码和 OCR 结果仍已按本机引擎返回。"
 
 
 def message_has_image(event: object) -> bool:
@@ -80,18 +90,24 @@ async def handle_forbidden_images(
         return False, ""
     names = ",".join(type(comp).__name__ for comp in comps)
     _log.info("[rules] image start group=%s comps=%s", group_id, names)
-    if await _qr_hit(comps, decoder):
+    hit = await _qr_hit(comps, decoder)
+    # 任一图检出就处置，不再 OCR，也不再叫模型
+    if hit is not None:
+        raw, payloads = hit
+        notice = qr_notice_text(QR_SOURCE_IMAGE, payloads)
         _log.info("[rules] image qr hit group=%s", group_id)
         remind = await apply_hit_actions(
             event,
             config,
             group_id,
             QRCODE_HIT,
-            QRCODE_HIT,
+            notice,
             poster,
             log_store,
             FORBIDDEN_REASON_QRCODE,
             mute_store=mute_store,
+            log_text=qr_log_text(str(getattr(event, "message_str", "") or ""), notice),
+            log_images=qr_log_images(raw),
         )
         return True, remind
     text = await _transcript_of(event, comps, transcribe, ocr)
@@ -140,6 +156,82 @@ async def handle_forbidden_images(
     return True, remind
 
 
+async def inspect_uploaded_image(
+    config: object,
+    store,
+    data: bytes,
+    decoder=None,
+    ocr=None,
+    get_provider=None,
+) -> dict:
+    """图片检测测试：上传字节过本机二维码和 OCR，再按触发词决定送不送一次模型。不处置、不写日志。"""
+    # 空字节没有图可识别，直接报错，不喂引擎
+    if not data:
+        return _inspect_blocked("没有收到图片内容，请重新选择图片。")
+    # 超限的图喂进识别器只会拖慢页面，也不喂
+    if len(data) > IMAGE_TEST_MAX_BYTES:
+        return _inspect_blocked("图片超过 8MB，请压缩后再上传。")
+    qr = qr_diagnose_bytes(data, decoder)
+    ocr_result = ocr_diagnose_bytes(data, ocr)
+    # 转写只用来过触发词门槛；调用方传的 qr_found 不认，结论只信本机解码
+    plan = plan_image_test(config, str(ocr_result.get("text") or ""), False, store)
+    result = {
+        "qr": qr,
+        "ocr": ocr_result,
+        "trigger": plan.trigger,
+        "plan_status": plan.status,
+        "llm_called": False,
+        "verdict": "",
+        "reason": "",
+        "message": plan.message,
+    }
+    # gif 在热路径跳过 OCR，本页跑过了就得让页面知道这条差别
+    if _is_gif(data):
+        result["note"] = GIF_OCR_NOTE
+    # 空转写、没触发词、没准则都不该叫模型
+    if plan.status != "ready":
+        return result
+    # 没注入取提供商的回调，说明当前环境没有对话模型
+    if get_provider is None:
+        result["message"] = _NO_PROVIDER_MESSAGE
+        return result
+    provider = await get_provider()
+    # 没配好提供商：模型这一步不跑，二维码和 OCR 字段照常返回
+    if provider is None:
+        result["message"] = _NO_PROVIDER_MESSAGE
+        return result
+    judged = await complete_yes_no(provider, plan.system, plan.user)
+    payload = test_result_payload(plan, judged.verdict, judged.reason)
+    result["llm_called"] = True
+    result["verdict"] = judged.verdict
+    result["reason"] = payload["reason"]
+    result["message"] = payload["message"]
+    return result
+
+
+def _inspect_blocked(message: str) -> dict:
+    """没跑引擎的错误状态。qr 和 ocr 给空字典，页面据此显示本次未检测。"""
+    return {
+        "qr": {},
+        "ocr": {},
+        "trigger": "",
+        "plan_status": "error",
+        "llm_called": False,
+        "verdict": "",
+        "reason": "",
+        "message": message,
+    }
+
+
+def _is_gif(data: bytes) -> bool:
+    """按文件头判断 gif。只有 GIF87a、GIF89a 两种头算。"""
+    for magic in _GIF_MAGIC:
+        # 头 6 个字节对上就是 gif
+        if data.startswith(magic):
+            return True
+    return False
+
+
 def _image_user(transcript: str) -> str:
     """送给模型的固定格式。能走到这里说明二维码未检出。"""
     return (
@@ -176,16 +268,18 @@ def skip_vision(comp: object) -> bool:
     return loc.lower().endswith(".gif")
 
 
-async def _qr_hit(comps: list, decoder) -> bool:
-    """任一图解出二维码就命中。"""
+async def _qr_hit(comps: list, decoder) -> tuple | None:
+    """命中的原图 base64 和解析文本。没有命中返回 None。"""
     for comp in comps:
         raw = await _comp_b64(comp)
         # 转失败当这张未检出，看下一张
         if not raw:
             continue
-        if qr_found_in_b64(raw, decoder):
-            return True
-    return False
+        found, payloads = qr_read_b64(raw, decoder)
+        # 第一张检出就停，后面的图不再解码
+        if found:
+            return raw, payloads
+    return None
 
 
 async def _transcript_of(event: object, comps: list, transcribe, ocr=None) -> str:

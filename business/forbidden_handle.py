@@ -15,6 +15,7 @@ from .feature_enable import feature_on
 from .forbidden_action import apply_hit_actions
 from .forbidden_image import handle_forbidden_images, message_has_image
 from .forbidden_judge import complete_yes_no, plan_forbidden_test
+from .forbidden_video import handle_forbidden_videos
 from .qq_role import is_qq_group_staff, speaker_qq_role
 from .whitelist import should_skip_forbidden, speaker_id
 
@@ -74,6 +75,22 @@ async def handle_forbidden_message(
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:
         _log.info("[rules] forbidden image hit group=%s", group_id)
+        return True, remind
+    handled, remind = await handle_forbidden_videos(
+        event,
+        config,
+        group_id,
+        get_provider,
+        poster,
+        log_store,
+        decoder,
+        ocr,
+        store,
+        mute_store=mute_store,
+    )
+    # 短视频二维码或视频模型已经处置，文本路不再跑
+    if handled:
+        _log.info("[rules] forbidden video hit group=%s", group_id)
         return True, remind
     return await _handle_forbidden_text(
         config,

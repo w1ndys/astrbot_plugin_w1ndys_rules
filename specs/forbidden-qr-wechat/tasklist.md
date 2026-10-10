@@ -1,0 +1,114 @@
+# 需求实施计划
+
+- [x] 1. 在 `business/forbidden_qr.py` 搭三级解码的骨架
+  - [x] 1.1 拆出三级加载函数，替换单个 QReader 加载
+    - 新增 `_load_wechat`：导入 `cv2.wechat_qrcode` 后无参构造 `WeChatQRCode()`；`cv2.wechat_qrcode` 不存在记 `missing`，构造抛异常记 `init_failed`
+    - 新增 `_load_zxing`：导入成功即该层 `ready`；导入失败记 `missing`
+    - 保留现有 QReader 加载，但改名为第三级，并让它的返回值区分 `missing` 和 `init_failed`
+    - 每层各自记录「已尝试加载」，失败只记一次，不重复导入
+    - 删除 `_qreader_failed` 与 `_qreader_init_failed` 的合并写法，改成每层独立状态
+    - 对应需求 2.1、2.2、2.3、2.5；正确性：一个层构造失败不影响另一层
+  - [x] 1.2 实现总状态计算和一次 warning
+    - `qr_engine_state()` 触发未尝试层的加载，再按「有 ready 就是 ready，否则有 init_failed 就是 init_failed，否则 missing」计算
+    - 新增只统计已尝试层的内部分支，供热路径和诊断复用，不提前加载后级
+    - 总状态不是 `ready` 时沿用一次 warning，文案保持 `[rules] qr engine not ready state=%s`
+    - 对应需求 2.1、2.2、2.3、2.4、2.5、2.6
+  - [x] 1.3 为三级加载和总状态补单元测试
+    - 微信层 `missing`、zxing 层 `ready` 时总状态为 `ready`
+    - 三级都导入失败时总状态为 `missing`，warning 只出现一次
+    - 导入成功但构造失败时该层为 `init_failed`
+    - 未尝试的层内部状态为空字符串，不报 `missing`
+    - 用现有 `unittest`，把 `tests/test_forbidden_qr.py` 里对 `_qreader_*` 的打桩迁到新的分层状态字段
+    - 对应需求 2.1、2.2、2.3、2.4；正确性：加载结果在本进程内复用一次
+
+- [x] 2. 实现热路径的三级调用顺序
+  - [x] 2.1 改写 `qr_found_in_bytes` 的内部路径
+    - 空字节先返回未检出；传入 `decoder` 时只跑替身，不碰三级加载函数
+    - 字节经 `cv2.imdecode` 得到 BGR；失败返回未检出
+    - 微信层 `detectAndDecode`：去空白后非空的文本才算检出，有定位点无文本不算
+    - 微信层未检出或抛异常时，用同一份 BGR 调 `zxingcpp.read_barcodes`
+    - 前两级都未检出的最后才构造 QReader，并按现有 `_reader_hit` 判定（有框即有检出）
+    - QReader 需要 RGB，只在走到第三级时才转，前两级命中不转
+    - 每层异常都不处置消息，只继续下一层
+    - 对应需求 1.1、1.2、1.3、1.4、1.5、1.6、1.7、1.8；正确性：空字节先短路、替身不碰真实引擎、前级命中不加载后级
+  - [x] 2.2 实现 zxing 的格式白名单
+    - 一次 `read_barcodes` 调用，只传入 QR Code、Micro QR、rMQR、Aztec、Data Matrix、PDF417
+    - 绑定里缺某个枚举时跳过该枚举，不整层失败
+    - 不设置 `try_harder`、`try_rotate`、`try_invert`
+    - 返回项必须格式在白名单内且文本去空白后非空
+    - EAN、UPC、Code 128、Code 39、ITF、Codabar 不传入也不采纳
+    - 对应需求 1.4 与「已拟定」第 3 条；正确性：一维商品码不得算检出
+  - [x] 2.3 为三级顺序和格式过滤补单元测试
+    - 微信层返回非空文本时，zxing 替身不被调用，`qreader` 模块不被导入
+    - 微信层返回空文本或抛异常时才调用 zxing
+    - zxing 返回非空文本时不构造 QReader
+    - zxing 返回一维码时不算检出
+    - 微信层只有定位点时继续后级
+    - QReader 有框、载荷为空时检出
+    - 三级层替身各自抛异常时返回未检出
+    - `qr_found_in_b64` 仍接受缺末尾 `=` 的 base64
+    - 对应需求 1.1、1.2、1.3、1.4、1.5、1.6、1.7、3.3、3.4、3.5
+
+- [x] 3. 检查点 - 确保所有测试通过
+  - 确保所有测试通过，如有疑问请询问用户
+
+- [x] 4. 让诊断结果带上命中层和分层状态
+  - [x] 4.1 扩展 `qr_diagnose_bytes` 的返回字典
+    - 新增 `wechat`、`zxing`、`qreader`、`layer` 四个键，`engine`、`found`、`box_count`、`payloads`、`error` 保留
+    - `box_count` 改按命中层计数：微信和 zxing 层是非空文本条数，QReader 层有框时是框数
+    - `payloads` 只装命中层的非空文本，每条截断 120 字、最多 3 条；只有框没有文本时为空列表
+    - 命中层取值 `wechat`、`zxing`、`qreader`，未检出时为空字符串
+    - 未走到的后级不因为诊断而提前加载，该层状态报空字符串
+    - 替身路径 `engine` 仍报 `ready`，`layer` 和三个分层状态报空字符串
+    - 异常时 `error` 为类型名，前面失败层的类型名在后续层检出时保留
+    - 对应需求 4.1、4.2、4.3、4.4、4.5 与「已拟定」第 5 条；正确性：载荷只来自命中层、error 只有类型名
+  - [x] 4.2 为诊断字段补单元测试
+    - 微信层命中时 `layer` 为 `wechat`，`payloads` 不含后两级结果
+    - 只有 zxing 命中时 `layer` 为 `zxing`
+    - 只有 QReader 检出时 `layer` 为 `qreader`，`payloads` 为空列表
+    - 三级都未检出时 `layer` 为空字符串
+    - 未走到的层状态为空字符串
+    - 空字节时 `error` 为 `empty_image`，坏图时 `error` 为 `bad_image`
+    - 对应需求 4.1、4.2、4.3、4.4
+  - [x] 4.3 确认业务层调用方无需改动
+    - `business/forbidden_image.py` 继续把 `qr_diagnose_bytes` 的字典放进 `qr`，不筛选字段
+    - `business/forbidden_video.py` 继续调 `qr_found_in_bytes`，抽帧数量和时长门槛不动
+    - 跑一次现有 `tests/test_forbidden_image.py` 与短视频相关测试，确认没有因为新增字段失败
+    - 对应需求 3.1、3.2、4.1
+
+- [x] 5. 检查点 - 确保所有测试通过
+  - 确保所有测试通过，如有疑问请询问用户
+
+- [x] 6. 更新图片检测测试页的二维码区
+  - [x] 6.1 扩展 `dashboard/src/forbidden-image-test-view.tsx`
+    - `ImageQrDiagnosis` 增加 `wechat`、`zxing`、`qreader`、`layer` 四个可选字符串
+    - 总状态为 `ready` 时展示引擎状态、三个分层状态、是否检出、命中层、检出数量、截断载荷
+    - 命中层 `wechat` 显示「微信」，`zxing` 显示「zxing」，`qreader` 显示「QReader」，空字符串显示「无」
+    - 分层状态为空字符串时显示「本次未加载」，不显示成 `missing`
+    - 旧「框数量」标签改成「检出数量」
+    - 总状态不是 `ready` 时仍显示「二维码引擎未加载，本次未识别」，并展示三个分层状态
+    - 不改上传类型、8MB 上限，也不提交 `qr_found`
+    - 对应需求 4.6、4.7、4.8；正确性：本次未加载不得显示成没装库
+  - [x] 6.2 执行 `cd dashboard && npm run build`
+    - 使 `pages/console/` 与源码一致
+    - 对应需求 4.6
+  - [x] 6.3 更新页面测试断言
+    - 源码含「命中层」「检出数量」，不含「框数量」
+    - `pages/console/assets/index.js` 含新增标签
+    - 保留现有「不把 `qr_found` 发给 `forbidden/image-test`」的断言
+    - 对应需求 4.6、4.7
+
+- [x] 7. 更新依赖声明
+  - [x] 7.1 在 `requirements.txt` 追加两行
+    - 保留 `qreader`，追加不带版本号的 `opencv-contrib-python` 和 `zxing-cpp`
+    - `rapidocr` 与 `onnxruntime` 不动
+    - 对应需求 5.1、5.2
+  - [x] 7.2 补依赖声明的测试
+    - `requirements.txt` 同时含 `qreader`、`opencv-contrib-python`、`zxing-cpp`
+    - 对应需求 5.1、5.2
+
+- [x] 8. 检查点 - 确保所有测试通过
+  - 已跑 `cd tests && ../.venv/bin/python -m unittest`
+  - 已跑 `ruff check .`
+  - 前端构建由任务 6.2 完成
+  - 确保所有测试通过，如有疑问请询问用户

@@ -16,13 +16,13 @@ class SettingsPageAssetsTest(unittest.TestCase):
         self.assertIn('script defer src="./assets/index.js"', html)
 
     def test_webhook_field_on_settings_page(self) -> None:
-        js = (SRC / "settings-view.jsx").read_text()
+        js = (SRC / "settings-view.tsx").read_text()
         self.assertIn("forbidden_feishu_webhook", js)
         self.assertIn("Input.Password", js)
 
     def test_settings_view_groups_by_group(self) -> None:
         # 配置页按群号勾选，不再按功能用 tags 填群号。
-        js = (SRC / "settings-view.jsx").read_text()
+        js = (SRC / "settings-view.tsx").read_text()
         self.assertIn("listsToRows", js)
         self.assertIn("rowsToLists", js)
         self.assertIn("按群号", js)
@@ -30,7 +30,7 @@ class SettingsPageAssetsTest(unittest.TestCase):
 
     def test_settings_view_has_group_name_column(self) -> None:
         # 群名列和拉取/保存按钮在配置页源码里。
-        js = (SRC / "settings-view.jsx").read_text()
+        js = (SRC / "settings-view.tsx").read_text()
         self.assertIn('title: "群名"', js)
         self.assertIn("拉取群名", js)
         self.assertIn("保存群名", js)

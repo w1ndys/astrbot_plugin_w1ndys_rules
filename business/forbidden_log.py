@@ -10,6 +10,7 @@ from ..entity.constants import (
     FORBIDDEN_REASON_IMAGE_MODEL,
     FORBIDDEN_REASON_MODEL,
     FORBIDDEN_REASON_QRCODE,
+    QR_CONTENT_EMPTY,
 )
 
 _BASE64_PREFIX = "base64://"
@@ -77,8 +78,9 @@ async def save_hit_log(
     judge_reason: str = "",
     sender_name: str = "",
     log_text: str | None = None,
-    ) -> None:
-    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。sender_name 是命中当时的群昵称，读不到传空串。log_text 只由模型命中传入。"""
+    log_images: str | None = None,
+) -> None:
+    """把采集好的原文写入日志。失败吞掉，不影响已经做完的撤回禁言。log_images 只在二维码命中时传入，替换成命中的那一张。"""
     # 没采集就表示这次不记
     if payload is None:
         return
@@ -89,9 +91,12 @@ async def save_hit_log(
     if not isinstance(log_store, ForbiddenLogStore):
         return
     text, json_text, images = payload
-    # 模型命中给了用户文本就用它，没给的调用方仍用外层 message_str
+    # 模型命中或二维码命中给了正文就用它，没给的调用方仍用外层 message_str
     if log_text is not None:
         text = log_text
+    # 二维码只存命中的原图或触发帧，不用消息里其它图
+    if log_images is not None:
+        images = log_images
     try:
         await log_store.insert(
             group_id,
@@ -174,3 +179,30 @@ def _strip_base64_prefix(raw: object) -> str:
     if text.startswith(_BASE64_PREFIX):
         return text[len(_BASE64_PREFIX) :]
     return text
+
+
+def qr_notice_text(source: str, payloads: list) -> str:
+    """飞书消息和日志正文共用的两行：来源和解析内容。"""
+    # 有框没文本也要写明，不能让管理员以为这次没检
+    if payloads:
+        content = " / ".join(payloads)
+    else:
+        content = QR_CONTENT_EMPTY
+    return f"来源：{source}\n二维码内容：{content}"
+
+
+def qr_log_text(message_str: str, notice: str) -> str:
+    """日志正文保留外层消息，再附上来源和解析内容。"""
+    base = (message_str or "").strip()
+    # 没有外层文字时只留二维码这两行
+    if not base:
+        return notice
+    return base + "\n" + notice
+
+
+def qr_log_images(raw_b64: str) -> str:
+    """只存命中的那一张。形状和 collect_images 一致，详情页才能直接看图。"""
+    # 转码失败也留一条失败记录，证明这次命中过图
+    if not raw_b64:
+        return json.dumps([{"ok": False}], ensure_ascii=False)
+    return json.dumps([{"ok": True, "data": raw_b64}], ensure_ascii=False)
