@@ -1,5 +1,7 @@
 # 业务层：本地二维码检出。三级解码器懒加载（微信检测器、zxing-cpp、QReader），
 # 每层缺库或失败互不影响，当未检出，不误禁。
+# 热路径固定按微信、zxing、QReader 的顺序跑，前一级检出就不跑后面的级，
+# 常见码不用等 QReader 的检测模型。
 # 检出即违禁，不看载荷。测试可传入 decoder。
 # 诊断结果只给测试页和日志用，热路径仍只看布尔。
 
@@ -38,19 +40,34 @@ _PAYLOAD_MAX_LEN = 120
 # 载荷最多留 3 条，多了对定位漏检没帮助
 _PAYLOAD_MAX_ITEMS = 3
 
+# 第二级 zxing 的格式白名单：只认二维码家族。一维商品码不传入也不采纳，
+# 否则普通商品照片会被判成二维码违禁。
+_ZXING_FORMAT_NAMES = (
+    "QRCode",
+    "MicroQRCode",
+    "RMQRCode",
+    "Aztec",
+    "DataMatrix",
+    "PDF417",
+)
+
 
 def qr_found_in_bytes(data: bytes, decoder=None) -> bool:
     """这组字节里有没有二维码。decoder 命中就 True。"""
-    # 空图解不了
+    # 空图解不了，三级都不加载
     if not data:
         return False
-    # 测试注入，不打真实 QReader
+    # 测试注入，不打真实三级引擎
     if decoder is not None:
         try:
             return bool(decoder(data))
         except Exception:  # noqa: BLE001 - 注入解码失败当未检出
             return False
-    return _qreader_found(data)
+    image = _bgr_from_bytes(data)
+    # 解不出 BGR 就不是图片，三级都不调用，也不把「图坏了」记成引擎没装
+    if image is None:
+        return False
+    return _three_layer_hit(image)
 
 
 
@@ -72,21 +89,129 @@ def qr_found_in_b64(raw: str, decoder=None) -> bool:
 
 
 
-def _qreader_found(data: bytes) -> bool:
-    """用第三级 QReader 检出即 True。库缺失或异常当未检出。"""
-    reader = _load_qreader()
-    # 这一层没起来就按引擎总状态记一次 warning，免得漏检没有痕迹
-    if reader is None:
-        _warn_engine_once()
-        return False
-    image = _bytes_to_rgb(data)
-    # 转不成图就当没解出来
-    if image is None:
+def _three_layer_hit(image) -> bool:
+    """固定三级顺序：微信检测器、zxing、QReader。前一级检出就不跑后面的级。"""
+    # 微信层命中就不用付后两级的时间
+    if _wechat_layer_hit(image):
+        return True
+    # zxing 命中就不用构造 QReader 模型
+    if _zxing_layer_hit(image):
+        return True
+    # 前两级都没解出来，最后才用 QReader 兜住「有框没文本」
+    if _qreader_layer_hit(image):
+        return True
+    # 三级都未检出，引擎总状态不是 ready 时记一次 warning，免得漏检没痕迹
+    _warn_engine_once()
+    return False
+
+
+def _wechat_layer_hit(image) -> bool:
+    """第一级微信检测器：已构造才跑，异常当未检出并继续后级。"""
+    detector = _load_wechat()
+    # 这一层缺 contrib 或模型构造失败时跳过，交给后两级兜底
+    if detector is None:
         return False
     try:
-        return _reader_hit(reader, image)
+        return _wechat_hit(detector, image)
+    except Exception:  # noqa: BLE001 - 检测器异常不处置消息，继续后级
+        return False
+
+
+def _wechat_hit(detector: object, image) -> bool:
+    """至少一条去空白后非空的文本才算检出，只有定位点不算。"""
+    texts = detector.detectAndDecode(image)[0]
+    for item in texts or []:
+        # 空文本表示有定位点但没解出内容，不算检出，交给后级兜底
+        if str(item).strip():
+            return True
+    return False
+
+
+def _zxing_layer_hit(image) -> bool:
+    """第二级 zxing-cpp：一次普通读取，异常当未检出并继续后级。"""
+    module = _load_zxing()
+    # 这一层没导入成功时跳过，交给 QReader 兜底
+    if module is None:
+        return False
+    try:
+        return _zxing_hit(module, image)
+    except Exception:  # noqa: BLE001 - 解码异常不处置消息，继续后级
+        return False
+
+
+def _zxing_hit(module: object, image) -> bool:
+    """read_barcodes 一次调用，只采纳白名单格式且文本非空的结果。"""
+    formats, allowed = _zxing_format_values(module)
+    # 绑定没有格式枚举时不传 formats，返回值仍按白名单过滤，一维码照样不采纳
+    if formats is None:
+        results = module.read_barcodes(image)
+    # 有白名单就只让库认这几种，普通照片上的一维码不会被读出来
+    else:
+        results = module.read_barcodes(image, formats=formats)
+    for item in results or []:
+        # 格式不在白名单（EAN、Code 128 这类一维码）或没有文本都不算检出
+        if _zxing_item_hit(item, allowed):
+            return True
+    return False
+
+
+def _zxing_format_values(module: object) -> tuple:
+    """拼 zxing 的格式白名单，绑定里缺哪个枚举就跳过哪个，不整层失败。"""
+    enums = getattr(module, "BarcodeFormat", None)
+    # 绑定连格式枚举都没有，调用方只能不传 formats，再靠返回值过滤
+    if enums is None:
+        return None, ()
+    combined = None
+    allowed = []
+    for name in _ZXING_FORMAT_NAMES:
+        item = getattr(enums, name, None)
+        # 当前绑定缺这个枚举，跳过它，其余枚举继续拼
+        if item is None:
+            continue
+        allowed.append(item)
+        combined = item if combined is None else combined | item
+    return combined, tuple(allowed)
+
+
+def _zxing_item_hit(item: object, allowed: tuple) -> bool:
+    """结果项格式在白名单内、且文本去空白后非空才算检出。"""
+    # 一维商品码不管库默认认不认都不采纳，免得普通图片被判违禁
+    if getattr(item, "format", None) not in allowed:
+        return False
+    return bool(str(getattr(item, "text", "") or "").strip())
+
+
+def _qreader_layer_hit(image) -> bool:
+    """第三级 QReader：有检测框或非空文本都算检出，库缺失或异常当未检出。"""
+    reader = _load_qreader()
+    # 这一层没起来就跳过，总状态由外面的 warning 统一记一次
+    if reader is None:
+        return False
+    try:
+        return _reader_hit(reader, _bgr_to_rgb(image))
     except Exception:  # noqa: BLE001 - 解码超时或模型异常不能误禁
         return False
+
+
+def _bgr_from_bytes(data: bytes):
+    """图片字节收成 BGR 数组，前两级共用这一份。解不出来返回 None。"""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        # 没装 OpenCV 或 numpy 就解不了图，三级都跑不了
+        return None
+    try:
+        buffer = np.frombuffer(data, dtype=np.uint8)
+        return cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+    except Exception:  # noqa: BLE001 - 坏图当未检出，不能误禁
+        return None
+
+
+def _bgr_to_rgb(image):
+    """QReader 要 RGB；BGR 反通道即可，只在走到第三级时才转这一次。"""
+    # 拷贝成连续内存，免得后级拿到负步长的视图
+    return image[:, :, ::-1].copy()
 
 
 def _load_wechat():
