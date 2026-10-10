@@ -120,6 +120,36 @@ FORBIDDEN_RECALL_HISTORY_COUNT = 30
 # WebUI 日志表默认每页条数。
 FORBIDDEN_LOG_PAGE_SIZE = 20
 
+# 违禁：短视频抽帧固定值。时长单位是秒，大小单位是字节。
+# 4.0 秒含边界，超过就不抽帧：伪造截图录屏通常 3 到 4 秒，再长会拖慢热路径。
+SHORT_VIDEO_MAX_SECONDS = 4.0
+# 时长不足 0.8 秒只抽 1 帧：这么短的视频只有一屏内容，多抽也是同一画面。
+SHORT_VIDEO_FRAME_SPLIT_SHORT = 0.8
+# 时长不足 2.0 秒抽 2 帧，达到 2.0 秒抽 3 帧：2 秒内画面变化少，2 帧够看。
+SHORT_VIDEO_FRAME_SPLIT_MID = 2.0
+# 单段短视频的抽帧数上限，与下面的等分兜底比例键对齐。
+SHORT_VIDEO_MAX_FRAMES = 3
+# 随机抽帧点避开首尾各 5%：首尾常见黑场和渐变，抽出来多半不是内容。
+SHORT_VIDEO_SAMPLE_MARGIN = 0.05
+# 相邻抽帧点的最小间隔占时长比例 1/6：3 个点正好铺满，避免全挤在同一秒。
+SHORT_VIDEO_MIN_GAP_RATIO = 1 / 6
+# 随机点排不开时的重抽次数上限：重抽 8 次还不行就改等分点，不能一直循环。
+SHORT_VIDEO_RANDOM_TRIES = 8
+# 随机点排不开时按帧数取的等分兜底比例，键是帧数，值是占时长的比例。
+# 1 帧取 50%；2 帧取 25%、75%；3 帧取 20%、50%、80%。
+SHORT_VIDEO_EVEN_RATIOS = {
+    1: (0.5,),
+    2: (0.25, 0.75),
+    3: (0.2, 0.5, 0.8),
+}
+# 原始消息段 file_size 上限 20MB（20*1024*1024）。超过就不下载，省带宽和时间。
+SHORT_VIDEO_MAX_FILE_BYTES = 20971520
+# 单次 ffprobe 或单帧 ffmpeg 的超时秒数。超时就放弃该视频剩余帧，避免卡住热路径。
+SHORT_VIDEO_TOOL_TIMEOUT_SECONDS = 8
+
+# 图片检测测试：请求体解码后的图片字节上限 8MB（8*1024*1024），与页面校验一致。
+IMAGE_TEST_MAX_BYTES = 8388608
+
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6
 DEFAULT_VERIFY_MUTE_SECONDS = 2592000
