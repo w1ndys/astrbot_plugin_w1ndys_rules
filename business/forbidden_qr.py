@@ -3,10 +3,10 @@
 # 热路径固定按微信、zxing、QReader 的顺序跑，前一级检出就不跑后面的级，
 # 常见码不用等 QReader 的检测模型。
 # 检出即违禁，不看载荷。测试可传入 decoder。
-# 诊断结果只给测试页和日志用，热路径仍只看布尔。
+# 诊断结果只给测试页和日志用：引擎总状态、三个分层状态、命中层、检出数量和截断载荷。
+# 热路径仍只看布尔，诊断不会为了报状态提前加载没走到的后级。
 
 import base64
-import io
 
 try:
     from astrbot.api import logger as _log
@@ -50,6 +50,11 @@ _ZXING_FORMAT_NAMES = (
     "DataMatrix",
     "PDF417",
 )
+
+# 诊断里的命中层取值，页面按这三个字符串显示层名字；未检出时留空串。
+_LAYER_WECHAT = "wechat"
+_LAYER_ZXING = "zxing"
+_LAYER_QREADER = "qreader"
 
 
 def qr_found_in_bytes(data: bytes, decoder=None) -> bool:
@@ -117,14 +122,15 @@ def _wechat_layer_hit(image) -> bool:
         return False
 
 
+def _wechat_texts(detector: object, image) -> list:
+    """调一次 detectAndDecode，取文本序列。定位点没有对应文本时这里是空串。"""
+    return list(detector.detectAndDecode(image)[0] or [])
+
+
 def _wechat_hit(detector: object, image) -> bool:
     """至少一条去空白后非空的文本才算检出，只有定位点不算。"""
-    texts = detector.detectAndDecode(image)[0]
-    for item in texts or []:
-        # 空文本表示有定位点但没解出内容，不算检出，交给后级兜底
-        if str(item).strip():
-            return True
-    return False
+    # 空文本表示有定位点但没解出内容，不算检出，交给后级兜底
+    return _nonblank_text_count(_wechat_texts(detector, image)) > 0
 
 
 def _zxing_layer_hit(image) -> bool:
@@ -139,8 +145,8 @@ def _zxing_layer_hit(image) -> bool:
         return False
 
 
-def _zxing_hit(module: object, image) -> bool:
-    """read_barcodes 一次调用，只采纳白名单格式且文本非空的结果。"""
+def _zxing_texts(module: object, image) -> list:
+    """read_barcodes 一次调用，只留白名单格式且文本非空的结果文本。"""
     formats, allowed = _zxing_format_values(module)
     # 绑定没有格式枚举时不传 formats，返回值仍按白名单过滤，一维码照样不采纳
     if formats is None:
@@ -148,11 +154,17 @@ def _zxing_hit(module: object, image) -> bool:
     # 有白名单就只让库认这几种，普通照片上的一维码不会被读出来
     else:
         results = module.read_barcodes(image, formats=formats)
+    texts = []
     for item in results or []:
-        # 格式不在白名单（EAN、Code 128 这类一维码）或没有文本都不算检出
+        # 格式不在白名单（EAN、Code 128 这类一维码）或没有文本都不采纳
         if _zxing_item_hit(item, allowed):
-            return True
-    return False
+            texts.append(getattr(item, "text", ""))
+    return texts
+
+
+def _zxing_hit(module: object, image) -> bool:
+    """read_barcodes 一次调用，只采纳白名单格式且文本非空的结果。"""
+    return bool(_zxing_texts(module, image))
 
 
 def _zxing_format_values(module: object) -> tuple:
@@ -304,22 +316,37 @@ def _has_items(value: object) -> bool:
         return bool(value)
 
 
+def _reader_texts(reader: object, image: object) -> list:
+    """QReader 的文本序列。没有 detect_and_decode 就是空列表。"""
+    decode = getattr(reader, "detect_and_decode", None)
+    # 老接口连文本方法都没有，只有框能算检出
+    if not callable(decode):
+        return []
+    return _text_items(decode(image=image))
 
-def _bytes_to_rgb(data: bytes):
-    """把图片字节收成 QReader 要的 RGB 数组。失败返回 None。"""
-    try:
-        import numpy as np
-        from PIL import Image as PILImage
-    except ImportError:
-        # 没装 pillow/numpy 就不能喂 QReader，当未检出
-        return None
 
+def _qreader_counts(reader: object, image: object) -> tuple:
+    """QReader 的框数和载荷：有 detect 就数框，没有 detect 才按非空文本条数数。"""
+    detect = getattr(reader, "detect", None)
+    # detect 只回答有没有码，数量看框；载荷仍取文本，方便页面看兜底内容
+    if callable(detect):
+        boxes = detect(image=image)
+        box_count = _count_items(boxes) if boxes is not None else 0
+        return box_count, _qreader_payloads(reader, image, box_count)
+    # 老接口没有 detect，只能按解出的非空文本条数报数量
+    texts = _reader_texts(reader, image)
+    return _nonblank_text_count(texts), _payload_list(texts)
+
+
+def _qreader_payloads(reader: object, image: object, box_count: int) -> list:
+    """取 QReader 文本。有框时解码失败仍保留框，不当成这一层没检出。"""
     try:
-        pil = PILImage.open(io.BytesIO(data))
-        rgb = pil.convert("RGB")
-        return np.asarray(rgb)
-    except Exception:  # noqa: BLE001 - 坏图当未检出
-        return None
+        return _payload_list(_reader_texts(reader, image))
+    except Exception:  # noqa: BLE001 - 文本解码失败不能把已经数到的框抹掉
+        # 框已经说明有码，文本失败只是页面看不到载荷
+        if box_count > 0:
+            return []
+        raise
 
 
 def qr_engine_state() -> str:
@@ -347,55 +374,114 @@ def _total_state(states: list) -> str:
     return ENGINE_MISSING
 
 
+def _tried_engine_state() -> str:
+    """按已经试过的层算总状态；一层都没试过时留空串，不报 missing。"""
+    states = _tried_states()
+    # 一层都没试过就没有总状态可言，空串让页面走「本次未加载」分支，
+    # 不然「没走到」会被读成「没装库」
+    if not states:
+        return ""
+    return _total_state(states)
+
+
 def qr_diagnose_bytes(data: bytes, decoder=None) -> dict:
-    """测试页用的二维码诊断：引擎状态、是否检出、框数和载荷。热路径不用它。"""
-    # 空图不喂引擎也不叫替身，直接报没检出
+    """测试页用的诊断：总状态、三个分层状态、命中层、检出数量和截断载荷。热路径不用它。"""
+    # 空图不喂引擎也不叫替身，直接报没检出；三层状态保持已记录值，不为诊断加载
     if not data:
-        return _diag_result(qr_engine_state(), False, 0, [], "empty_image")
-    # 测试注入替身，不算真实引擎，按 ready 报
+        return _diag_result(_tried_engine_state(), False, 0, [], "empty_image", "")
+    # 测试注入替身，不算真实引擎，按 ready 报，分层状态和命中层留空串
     if decoder is not None:
         try:
             result = decoder(data)
         except Exception as exc:  # noqa: BLE001 - 替身异常当未检出，不误禁
-            return _diag_result(ENGINE_READY, False, 0, [], type(exc).__name__)
+            return _diag_result(ENGINE_READY, False, 0, [], type(exc).__name__, "")
         box_count, payloads = _decoder_counts(result)
-        return _diag_result(ENGINE_READY, _has_items(result), box_count, payloads, "")
-    engine = qr_engine_state()
-    # 引擎没跑起来就报否，页面据此提示本次未识别
-    if engine != ENGINE_READY:
-        return _diag_result(engine, False, 0, [], "")
-    return _qr_diagnose_with_reader(engine, data)
-
-
-def _qr_diagnose_with_reader(engine: str, data: bytes) -> dict:
-    """真实 QReader 路径：数框、收载荷。异常只带类型名，不带图片字节。"""
-    reader = _load_qreader()
-    # 加载失败就按当前状态报否
-    if reader is None:
-        return _diag_result(qr_engine_state(), False, 0, [], "")
-    image = _bytes_to_rgb(data)
-    # 转不成图说明这些字节不是图片
+        return _diag_result(ENGINE_READY, _has_items(result), box_count, payloads, "", "")
+    image = _bgr_from_bytes(data)
+    # 解不出 BGR 说明这些字节不是图片，三级都不调用；状态只报已试过的层，
+    # 不能把「图坏了」写成引擎 missing
     if image is None:
-        return _diag_result(engine, False, 0, [], "bad_image")
-    box_count = 0
-    payloads = []
+        return _diag_result(_tried_engine_state(), False, 0, [], "bad_image", "")
+    return _diagnose_three_layers(image)
+
+
+def _diagnose_three_layers(image) -> dict:
+    """真实三级诊断：微信、zxing、QReader 按顺序跑，命中即停，异常不中断诊断。"""
+    layer, box_count, payloads, error = _wechat_diagnose(image)
+    # 微信层命中就不跑后两级，也不为诊断提前加载它们
+    if layer:
+        return _diag_from_layer(layer, box_count, payloads, error)
+    layer, box_count, payloads, zxing_error = _zxing_diagnose(image)
+    # 这一层没抛异常时留着前一级的类型名，页面才知道是谁失败后兜住的
+    if not zxing_error:
+        zxing_error = error
+    # zxing 命中同样不加载第三级
+    if layer:
+        return _diag_from_layer(layer, box_count, payloads, zxing_error)
+    layer, box_count, payloads, qreader_error = _qreader_diagnose(image)
+    # 最后一级没抛异常就沿用前面失败层的类型名，三级都异常时留最后一级的类型名
+    if not qreader_error:
+        qreader_error = zxing_error
+    # 有框或有非空文本都算 QReader 层命中
+    if layer:
+        return _diag_from_layer(layer, box_count, payloads, qreader_error)
+    # 三级都未检出：命中层留空串，错误名保留最后一层失败的类型名
+    return _diag_result(_tried_engine_state(), False, 0, [], qreader_error, "")
+
+
+def _diag_from_layer(layer: str, box_count: int, payloads: list, error: str) -> dict:
+    """命中层的诊断结果。总状态按已经试过的层算，未走到的层留空串。"""
+    return _diag_result(_tried_engine_state(), True, box_count, payloads, error, layer)
+
+
+def _wechat_diagnose(image) -> tuple:
+    """微信层诊断：解出非空文本就报命中层，异常只留类型名，缺 contrib 直接跳过。"""
+    detector = _load_wechat()
+    # 这一层缺 contrib 或模型构造失败时跳过，交给后两级兜底
+    if detector is None:
+        return "", 0, [], ""
     try:
-        detect = getattr(reader, "detect", None)
-        # detect 只回答有几个框
-        if callable(detect):
-            boxes = detect(image=image)
-            # 没返回就是零个框
-            if boxes is not None:
-                box_count = _count_items(boxes)
-        decode = getattr(reader, "detect_and_decode", None)
-        # 老接口没有 detect，只能看文本载荷
-        if callable(decode):
-            payloads = _payload_list(decode(image=image))
-    except Exception as exc:  # noqa: BLE001 - 引擎异常当未检出，不误禁
-        return _diag_result(engine, False, 0, [], type(exc).__name__)
-    # 有框或有载荷都算检出
-    found = box_count > 0 or bool(payloads)
-    return _diag_result(engine, found, box_count, payloads, "")
+        texts = _wechat_texts(detector, image)
+    except Exception as exc:  # noqa: BLE001 - 检测器异常不处置消息，只记类型名继续后级
+        return "", 0, [], type(exc).__name__
+    payloads = _payload_list(texts)
+    # 只有定位点没有文本时不算这一层命中，继续后级
+    if not payloads:
+        return "", 0, [], ""
+    # 数量按截断前的非空文本条数报，载荷才截到 120 字、3 条
+    return _LAYER_WECHAT, _nonblank_text_count(texts), payloads, ""
+
+
+def _zxing_diagnose(image) -> tuple:
+    """zxing 层诊断：白名单格式的非空文本才算命中，异常只留类型名。"""
+    module = _load_zxing()
+    # 这一层没导入成功时跳过，交给 QReader 兜底
+    if module is None:
+        return "", 0, [], ""
+    try:
+        texts = _zxing_texts(module, image)
+    except Exception as exc:  # noqa: BLE001 - 解码异常不处置消息，只记类型名继续后级
+        return "", 0, [], type(exc).__name__
+    # 一维商品码和空文本在取文本时就丢掉了，剩下的都算这一层的数量
+    if not texts:
+        return "", 0, [], ""
+    return _LAYER_ZXING, len(texts), _payload_list(texts), ""
+
+
+def _qreader_diagnose(image) -> tuple:
+    """QReader 层诊断：走到这一级才把 BGR 转 RGB，有框或有非空文本都算命中。"""
+    reader = _load_qreader()
+    # 这一层没起来就跳过，总状态按已试过的层算
+    if reader is None:
+        return "", 0, [], ""
+    try:
+        box_count, payloads = _qreader_counts(reader, _bgr_to_rgb(image))
+    except Exception as exc:  # noqa: BLE001 - 检测模型异常不能误禁，只记类型名
+        return "", 0, [], type(exc).__name__
+    # 有框没文本也算命中，这时候载荷是空列表
+    if box_count == 0 and not payloads:
+        return "", 0, [], ""
+    return _LAYER_QREADER, box_count, payloads, ""
 
 
 def _decoder_counts(result: object) -> tuple:
@@ -431,6 +517,16 @@ def _count_items(value: object) -> int:
         return 1
 
 
+def _nonblank_text_count(values: object) -> int:
+    """数去空白后非空的文本条数。空串是定位点或空载荷，不计入命中层数量。"""
+    count = 0
+    for item in _text_items(values):
+        # 没有文本的定位点不算一条检出
+        if str(item).strip():
+            count += 1
+    return count
+
+
 def _payload_list(values: object) -> list:
     """收载荷：丢掉空串、每条截断 120 字、最多留 3 条。"""
     payloads = []
@@ -462,11 +558,17 @@ def _text_items(values: object) -> list:
 
 
 def _diag_result(
-    engine: str, found: bool, box_count: int, payloads: list, error: str
+    engine: str, found: bool, box_count: int, payloads: list, error: str, layer: str
 ) -> dict:
-    """拼诊断结果。字段名和测试页约定一致，error 不含图片字节。"""
+    """拼诊断结果。九个键一个不少，调用方读不到字段也不会 KeyError。"""
+    # 三个分层状态报本进程已经记下的值：还没试过的层是空串，页面显示「本次未加载」，
+    # 不能为了凑字段在这里触发加载
     return {
         "engine": engine,
+        "wechat": _wechat_state,
+        "zxing": _zxing_state,
+        "qreader": _qreader_state,
+        "layer": layer,
         "found": found,
         "box_count": box_count,
         "payloads": payloads,

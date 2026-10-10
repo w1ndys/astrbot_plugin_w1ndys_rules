@@ -314,6 +314,8 @@ def save_engine_state() -> tuple:
         forbidden_qr._zxing_state,
         forbidden_qr._qreader,
         forbidden_qr._qreader_state,
+        forbidden_qr._bgr_from_bytes,
+        forbidden_qr._bgr_to_rgb,
         forbidden_ocr._engine,
         forbidden_ocr._engine_failed,
         forbidden_ocr._engine_init_failed,
@@ -335,6 +337,8 @@ def restore_engine_state(saved: tuple) -> None:
         forbidden_qr._zxing_state,
         forbidden_qr._qreader,
         forbidden_qr._qreader_state,
+        forbidden_qr._bgr_from_bytes,
+        forbidden_qr._bgr_to_rgb,
         forbidden_ocr._engine,
         forbidden_ocr._engine_failed,
         forbidden_ocr._engine_init_failed,
@@ -485,11 +489,15 @@ class UploadedImageInspectTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_engine_missing_is_not_found(self) -> None:
         """引擎没装时报 missing，检出必须为否，不能显示成已识别且无码。"""
+        # 这组字节本来解不出图，诊断会停在坏图那一步；给解码替身才真的去试三级
+        forbidden_qr._bgr_from_bytes = lambda _data: object()
         result = await inspect_uploaded_image(
             ready_config(), FakeStore(), b"uploaded-image"
         )
         self.assertEqual(result["qr"]["engine"], "missing")
         self.assertFalse(result["qr"]["found"])
+        self.assertEqual(result["qr"]["layer"], "")
+        self.assertEqual(result["qr"]["wechat"], "missing")
         self.assertEqual(result["ocr"]["engine"], "missing")
 
     async def test_empty_bytes_skips_engines(self) -> None:

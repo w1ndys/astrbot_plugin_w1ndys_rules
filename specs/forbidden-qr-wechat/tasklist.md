@@ -52,8 +52,8 @@
 - [x] 3. 检查点 - 确保所有测试通过
   - 确保所有测试通过，如有疑问请询问用户
 
-- [ ] 4. 让诊断结果带上命中层和分层状态
-  - [ ] 4.1 扩展 `qr_diagnose_bytes` 的返回字典
+- [x] 4. 让诊断结果带上命中层和分层状态
+  - [x] 4.1 扩展 `qr_diagnose_bytes` 的返回字典
     - 新增 `wechat`、`zxing`、`qreader`、`layer` 四个键，`engine`、`found`、`box_count`、`payloads`、`error` 保留
     - `box_count` 改按命中层计数：微信和 zxing 层是非空文本条数，QReader 层有框时是框数
     - `payloads` 只装命中层的非空文本，每条截断 120 字、最多 3 条；只有框没有文本时为空列表
@@ -62,7 +62,7 @@
     - 替身路径 `engine` 仍报 `ready`，`layer` 和三个分层状态报空字符串
     - 异常时 `error` 为类型名，前面失败层的类型名在后续层检出时保留
     - 对应需求 4.1、4.2、4.3、4.4、4.5 与「已拟定」第 5 条；正确性：载荷只来自命中层、error 只有类型名
-  - [ ] 4.2 为诊断字段补单元测试
+  - [x] 4.2 为诊断字段补单元测试
     - 微信层命中时 `layer` 为 `wechat`，`payloads` 不含后两级结果
     - 只有 zxing 命中时 `layer` 为 `zxing`
     - 只有 QReader 检出时 `layer` 为 `qreader`，`payloads` 为空列表
@@ -70,13 +70,13 @@
     - 未走到的层状态为空字符串
     - 空字节时 `error` 为 `empty_image`，坏图时 `error` 为 `bad_image`
     - 对应需求 4.1、4.2、4.3、4.4
-  - [ ] 4.3 确认业务层调用方无需改动
+  - [x] 4.3 确认业务层调用方无需改动
     - `business/forbidden_image.py` 继续把 `qr_diagnose_bytes` 的字典放进 `qr`，不筛选字段
     - `business/forbidden_video.py` 继续调 `qr_found_in_bytes`，抽帧数量和时长门槛不动
     - 跑一次现有 `tests/test_forbidden_image.py` 与短视频相关测试，确认没有因为新增字段失败
     - 对应需求 3.1、3.2、4.1
 
-- [ ] 5. 检查点 - 确保所有测试通过
+- [x] 5. 检查点 - 确保所有测试通过
   - 确保所有测试通过，如有疑问请询问用户
 
 - [ ] 6. 更新图片检测测试页的二维码区
