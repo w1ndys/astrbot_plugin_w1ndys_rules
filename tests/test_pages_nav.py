@@ -25,13 +25,16 @@ class PagesNavTest(unittest.TestCase):
 
     def test_source_has_inpage_tabs(self) -> None:
         """点 Tab 换面板，不改宿主 hash。"""
-        nav = (SRC / "nav.js").read_text()
+        nav = (SRC / "nav.ts").read_text()
         self.assertNotIn("window.top", nav)
         self.assertNotIn("#/plugin-page/", nav)
         self.assertIn("forbidden-triggers", nav)
         self.assertIn("welcome", nav)
-        app = (SRC / "App.jsx").read_text()
+        # 图片检测测试跟违禁测试同一层，也是页内 Tab
+        self.assertIn("forbidden-image-test", nav)
+        app = (SRC / "App.tsx").read_text()
         self.assertIn('type="card"', app)
         self.assertIn("onChange={setActive}", app)
         self.assertIn("WelcomeView", app)
         self.assertIn("ForbiddenTriggersView", app)
+        self.assertIn("ForbiddenImageTestView", app)

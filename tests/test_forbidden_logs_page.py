@@ -16,7 +16,7 @@ class ForbiddenLogsPageAssetsTest(unittest.TestCase):
         self.assertIn('script defer src="./assets/index.js"', html)
 
     def test_images_shown_as_img_not_text(self) -> None:
-        js = (SRC / "forbidden-logs-view.jsx").read_text()
+        js = (SRC / "forbidden-logs-view.tsx").read_text()
         self.assertIn("图片未能保存", js)
         self.assertIn("<img", js)
         self.assertNotIn("images", js)
@@ -26,7 +26,7 @@ class ForbiddenLogsRosterSourceTest(unittest.TestCase):
     """源码约定：四个名单按钮、请求路径和行号参数。"""
 
     def test_roster_buttons_and_paths(self) -> None:
-        js = (SRC / "forbidden-logs-view.jsx").read_text()
+        js = (SRC / "forbidden-logs-view.tsx").read_text()
         self.assertIn("加入本群白名单", js)
         self.assertIn("加入全局白名单", js)
         self.assertIn("加入本群黑名单", js)
@@ -48,7 +48,7 @@ class ForbiddenLogsNameSourceTest(unittest.TestCase):
     """源码约定：群名读共享映射，群昵称来自日志，回补走新接口。"""
 
     def test_view_reads_shared_group_name_map(self) -> None:
-        js = (SRC / "forbidden-logs-view.jsx").read_text()
+        js = (SRC / "forbidden-logs-view.tsx").read_text()
         self.assertIn("群名", js)
         self.assertIn("群昵称", js)
         self.assertIn("group-name/list", js)

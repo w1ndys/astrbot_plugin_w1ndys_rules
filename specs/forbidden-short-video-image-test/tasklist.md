@@ -92,12 +92,12 @@
 - [ ] 6. 检查点 - 确保所有测试通过
   - 确保所有测试通过，如有疑问请询问用户
 
-- [ ] 7. 增加图片检测测试页
-  - [ ] 7.1 在 `dashboard/src/nav.ts` 和 `dashboard/src/App.tsx` 增加页内 Tab
+- [x] 7. 增加图片检测测试页
+  - [x] 7.1 在 `dashboard/src/nav.ts` 和 `dashboard/src/App.tsx` 增加页内 Tab
     - key 为 `forbidden-image-test`，label 为「图片检测测试」，放在 `forbidden-test` 后面
     - 不新增顶层路由，不改旧「违禁测试」页的三种试跑和 `qr_found` 开关
     - 对应需求 3.1
-  - [ ] 7.2 新建 `dashboard/src/forbidden-image-test-view.tsx`
+  - [x] 7.2 新建 `dashboard/src/forbidden-image-test-view.tsx`
     - 说明文案写明结果来自本机 QReader 和 RapidOCR，不处置、不写日志，旧开关不解码
     - 只接受 png、jpeg、webp、gif，且不超过 8MB；不合规则显示原因且不发请求
     - 选择后预览；没有预览或请求进行中时「检测」不可用
@@ -105,10 +105,10 @@
     - 分项展示引擎状态、是否检出、框数量、截断载荷、OCR 文本、触发词、是否送模型、模型结论
     - 引擎不是 `ready` 时固定显示「二维码引擎未加载，本次未识别」
     - 对应需求 3.2、3.3、3.4、3.5、3.6、3.7
-  - [ ] 7.3 执行 `cd dashboard && npm run build`
+  - [x] 7.3 执行 `cd dashboard && npm run build`
     - 使 `pages/console/` 与源码一致
     - 对应需求 3.1
-  - [ ] 7.4 为页面源码和构建产物补测试
+  - [x] 7.4 为页面源码和构建产物补测试
     - 源码含新 Tab、8MB 限制，且不把 `qr_found` 发给 `forbidden/image-test`
     - `pages/console/assets/index.js` 含「图片检测测试」
     - 更新 `tests/test_pages_nav.py` 里已有的 Tab 断言，避免旧断言把新 Tab 判失败
