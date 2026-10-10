@@ -32,6 +32,8 @@ class PagesNavTest(unittest.TestCase):
         self.assertIn("welcome", nav)
         # 图片检测测试跟违禁测试同一层，也是页内 Tab
         self.assertIn("forbidden-image-test", nav)
+        # 加图片检测测试时不能把违禁日志顶掉
+        self.assertIn("forbidden-logs", nav)
         app = (SRC / "App.tsx").read_text()
         self.assertIn('type="card"', app)
         self.assertIn("onChange={setActive}", app)
