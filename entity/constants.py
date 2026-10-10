@@ -150,6 +150,12 @@ SHORT_VIDEO_TOOL_TIMEOUT_SECONDS = 8
 # 图片检测测试：请求体解码后的图片字节上限 8MB（8*1024*1024），与页面校验一致。
 IMAGE_TEST_MAX_BYTES = 8388608
 
+# 本地引擎状态。二维码和 OCR 诊断共用这三个值，页面按它区分「没装」和「没检出」。
+# ready 表示这次真的跑了识别；后两者表示没跑，检出必须报否。
+ENGINE_READY = "ready"
+ENGINE_MISSING = "missing"
+ENGINE_INIT_FAILED = "init_failed"
+
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6
 DEFAULT_VERIFY_MUTE_SECONDS = 2592000

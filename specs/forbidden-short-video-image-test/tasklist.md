@@ -7,19 +7,19 @@
     - 每个常量写明单位和为什么取这个值
     - 对应需求 1.1、1.4、1.6、3.2
 
-- [ ] 2. 让二维码和 OCR 能区分「没加载」和「没检出」
-  - [ ] 2.1 在 `business/forbidden_qr.py` 增加诊断结果
+- [x] 2. 让二维码和 OCR 能区分「没加载」和「没检出」
+  - [x] 2.1 在 `business/forbidden_qr.py` 增加诊断结果
     - 保留 `qr_found_in_b64` 的布尔语义，热路径继续用它
     - 诊断含 `engine`、`found`、`box_count`、`payloads`、`error`
     - `payloads` 每条截断到 120 字，最多 3 条
     - 引擎不是 `ready` 时 `found` 为否
     - 热路径第一次发现引擎不是 `ready` 时记录一次 warning，不每张图重复导入
     - 对应需求 4.1、4.2、4.3、4.4；正确性：引擎不可用不得显示成已识别且无码
-  - [ ] 2.2 在 `business/forbidden_ocr.py` 增加诊断结果
+  - [x] 2.2 在 `business/forbidden_ocr.py` 增加诊断结果
     - 返回 `engine`、`text`、`error`
     - 热路径仍用 `ocr_text_from_bytes`；引擎缺失的现有 warning 保留
     - 对应需求 3.5
-  - [ ] 2.3 为诊断结果补单元测试
+  - [x] 2.3 为诊断结果补单元测试
     - 有框或有载荷时 `found` 为是且 `engine` 为 `ready`
     - 空结果且引擎可加载时 `found` 为否、`engine` 仍为 `ready`
     - 导入失败为 `missing`，初始化失败为 `init_failed`，两者 `found` 都为否
