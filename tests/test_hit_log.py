@@ -60,6 +60,28 @@ class MaskPayloadTest(unittest.TestCase):
         self.assertEqual(mask_payload(526), 526)
         self.assertIs(mask_payload(True), True)
 
+    def test_json_string_inside_string_is_masked(self) -> None:
+        # 生产里卡片 JSON 是「字符串」嵌在外层，不是字典，这层漏遮会让 token 进日志
+        inner = '{"config": {"token": "SECRET_VALUE", "width": 526}}'
+        masked = mask_payload({"message": [{"data": {"data": inner}}]})
+        text = str(masked)
+        self.assertNotIn("SECRET_VALUE", text)
+        self.assertIn("[已打码]", text)
+
+    def test_cq_code_string_is_masked(self) -> None:
+        # raw_message 是 CQ 码字符串，逗号还被换成 HTML 实体，token 同样不能漏
+        cq = '[CQ:json,data={"config":{"token":"SECRET_VALUE"&#44;"width":526}}]'
+        text = str(mask_payload({"raw_message": cq}))
+        self.assertNotIn("SECRET_VALUE", text)
+
+    def test_url_signature_inside_json_string_is_masked(self) -> None:
+        # 嵌在字符串里的地址签名也要遮，不能只遮顶层字典
+        inner = '{"jumpUrl": "mqqapi://card/show_pslcard?authSig=SECRET_VALUE&uin=1"}'
+        text = str(mask_payload({"data": inner}))
+        self.assertNotIn("SECRET_VALUE", text)
+        # 非敏感参数留着，排查时还能看出这是哪种卡片
+        self.assertIn("uin=1", text)
+
 
 class HitLineTest(unittest.TestCase):
     # 那一行本身
