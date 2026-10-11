@@ -2,7 +2,7 @@
 # payload 里的签名和 token 打码后才打，避免把密钥写进日志文件。
 
 import json
-
+import re
 try:
     from astrbot.api import logger as _log
 except ImportError:
@@ -12,6 +12,8 @@ except ImportError:
     _log = logging.getLogger("astrbot_plugin_w1ndys_rules")
 
 from .debug_payload import to_plain
+# 字符串里形如 "名": "值" 的片段，用来遮嵌在字符串里的密钥，允许两侧带转义反斜杠
+_JSON_PAIR = re.compile(r'\\?"([A-Za-z_][A-Za-z0-9_]*)\\?"\s*:\s*\\?"([^"\\]*)\\?"')
 
 # 字段名或查询参数名里出现这些片段就当密钥，命中就遮。宁可多遮不可漏遮。
 _SENSITIVE_KEY_MARKERS = (
@@ -54,7 +56,7 @@ def log_hit(group_id: str, user_id: str, event: object) -> None:
 
 
 def mask_payload(value: object) -> object:
-    """递归给 payload 打码：字段名像密钥就遮值，地址里的签名参数也遮。"""
+    """递归给 payload 打码：字段名像密钥就遮值，地址和嵌套 JSON 里的密钥也遮。"""
     # 字典逐项看字段名，命中的整段遮掉，不看内容
     if isinstance(value, dict):
         result = {}
@@ -71,10 +73,44 @@ def mask_payload(value: object) -> object:
         for item in value:
             result.append(mask_payload(item))
         return result
-    # 字符串可能是带签名查询串的地址
+    # 字符串可能是地址查询串，也可能是嵌成字符串的整段卡片 JSON
     if isinstance(value, str):
-        return mask_query(value)
+        return mask_text(value)
     return value
+
+
+def mask_text(text: str) -> str:
+    """遮字符串里的密钥：整段 JSON 再钻一层，零散的键值对直接替换。"""
+    parsed = _try_json(text)
+    # 整段就是 JSON 就递归遮完再序列化，卡片 JSON 常以字符串形式嵌在外层
+    if parsed is not None:
+        return json.dumps(mask_payload(parsed), ensure_ascii=False)
+    return _mask_json_pairs(mask_query(text))
+
+
+def _try_json(text: str):
+    """字符串能解析成对象或数组就返回它，否则 None。"""
+    stripped = text.strip()
+    # 只有对象和数组才值得再钻，普通文字和 CQ 码不解析
+    if not stripped.startswith("{") and not stripped.startswith("["):
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
+def _mask_json_pairs(text: str) -> str:
+    """把字符串里 "密钥": "值" 的值换成占位，其余原样保留。"""
+
+    def replace(match):
+        value = match.group(2)
+        # 字段名不像密钥就不动；空值也没得遮
+        if not _is_sensitive_key(match.group(1)) or not value:
+            return match.group(0)
+        return match.group(0).replace(value, _MASKED)
+
+    return _JSON_PAIR.sub(replace, text)
 
 
 def mask_query(text: str) -> str:
