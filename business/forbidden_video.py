@@ -49,6 +49,15 @@ _PROBE_ENTRY = "format=duration"
 # 本进程是否已经确认缺 ffprobe 或 ffmpeg。缺了就不再抽帧，避免每条消息都失败一次。
 _tools_missing = False
 
+# 段级跳过原因码对应的中文说法，日志里说大白话；认不出的码原样留着
+_SKIP_REASON_TEXT = {
+    "too_large": "文件太大",
+    "too_long": "超时长",
+    "no_file": "拿不到本地文件",
+    "no_duration": "读不到时长",
+    "no_frame": "没抽出帧",
+}
+
 def video_comps(event: object) -> list:
     """消息链里类型名 Video 的段。合并转发里的视频和文件段 mp4 都不在这里。"""
     getter = getattr(event, "get_messages", None)
@@ -168,13 +177,13 @@ async def handle_forbidden_videos(
         return False, ""
     # 本进程已经确认缺抽帧工具，后面所有短视频都不再试
     if _tools_missing:
-        _log.info("[rules] video skip group=%s reason=tool_missing", group_id)
+        _log.debug("[群管] 视频跳过 群号=%s 原因=缺抽帧工具", group_id)
         return False, ""
-    _log.info("[rules] video start group=%s comps=%s", group_id, len(comps))
+    _log.debug("[群管] 视频检测开始 群号=%s 段数=%s", group_id, len(comps))
     frames = await _collect_frames(event, comps, runner, random_fn)
     # 一帧都没抽出来（超时长、时长未知、文件过大、坏视频）就不处置
     if not frames:
-        _log.info("[rules] video skip group=%s reason=no_frame", group_id)
+        _log.debug("[群管] 视频跳过 群号=%s 原因=没抽出帧", group_id)
         return False, ""
     return await _judge_frames(
         event,
@@ -217,7 +226,7 @@ async def _judge_frames(
         # 任一帧检出二维码就直接处置，不再认字也不再叫模型
         if found:
             notice = qr_notice_text(QR_SOURCE_VIDEO, payloads)
-            _log.info("[rules] video qr hit group=%s", group_id)
+            _log.debug("[群管] 视频二维码命中 群号=%s", group_id)
             remind = await apply_hit_actions(
                 event,
                 config,
@@ -236,8 +245,8 @@ async def _judge_frames(
     plan = plan_image_test(config, transcript, False, store)
     # 空转写、没触发词或没设定都不叫模型
     if plan.status != "ready":
-        _log.info(
-            "[rules] video skip group=%s status=%s msg=%s",
+        _log.debug(
+            "[群管] 视频跳过 群号=%s 状态=%s 说明=%s",
             group_id,
             plan.status,
             plan.message,
@@ -248,7 +257,7 @@ async def _judge_frames(
     judged = await complete_yes_no(provider, plan.system, user)
     # 只有第一行「是」才处置，否和乱答都不动
     if judged.verdict != "yes":
-        _log.info("[rules] video verdict group=%s verdict=%s", group_id, judged.verdict)
+        _log.debug("[群管] 视频判定 群号=%s 判定=%s", group_id, judged.verdict)
         return False, ""
     remind = await apply_hit_actions(
         event,
@@ -264,7 +273,7 @@ async def _judge_frames(
         # 视频转写命中也存送审用户文本（含转写正文），和飞书「消息」同一份
         log_text=user,
     )
-    _log.info("[rules] video model hit group=%s trigger=%s", group_id, plan.trigger)
+    _log.debug("[群管] 视频转写命中已处置 群号=%s 触发词=%s", group_id, plan.trigger)
     return True, remind
 
 async def _collect_frames(event: object, comps: list, runner, random_fn) -> list:
@@ -492,9 +501,14 @@ def _text_of(value: object) -> str:
         return ""
     return str(value).strip()
 
+def _skip_reason_text(reason: str) -> str:
+    """段级跳过原因码转中文。认不出的码原样返回，方便对照代码。"""
+    return _SKIP_REASON_TEXT.get(reason, reason)
+
+
 def _log_skip(index: int, reason: str) -> None:
     """记一段视频的跳过原因，漏检时能看出是哪一步挡下来的。"""
-    _log.info("[rules] video segment skip index=%s reason=%s", index, reason)
+    _log.debug("[群管] 视频段跳过 序号=%s 原因=%s", index, _skip_reason_text(reason))
 
 def _mark_tools_missing() -> None:
     """本进程第一次发现缺抽帧工具时记一次，之后的短视频都直接跳过。"""
@@ -503,4 +517,4 @@ def _mark_tools_missing() -> None:
     if _tools_missing:
         return
     _tools_missing = True
-    _log.warning("[rules] short video skip reason=tool_missing")
+    _log.warning("[群管] 短视频跳过 原因=没装抽帧工具（ffprobe/ffmpeg），之后都不再抽帧")

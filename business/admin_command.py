@@ -60,9 +60,9 @@ async def handle_admin_command(
         return False, ""
     # 欢迎语：无权误发静默，也不让这条再去撞关键词或进模型
     if not can_edit_welcome(event):
-        _log.info("[rules] admin skip group=%s action=%s reason=no_perm", group_id, action)
+        _log.debug("[群管] 管理命令跳过 群号=%s 动作=%s 原因=没有权限", group_id, action)
         return True, ""
-    _log.info("[rules] admin cmd group=%s action=%s", group_id, action)
+    _log.debug("[群管] 管理命令 群号=%s 动作=%s", group_id, action)
     # 查看本群独立配置
     if action == "welcome_show":
         return True, show_welcome(welcome, event, group_id)

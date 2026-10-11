@@ -44,12 +44,12 @@ async def handle_forbidden_message(
     if not feature_on(config, CFG_FORBIDDEN_GROUPS, group_id):
         # 纯图也要留下跳过原因，否则看起来像漏检
         if message_has_image(event):
-            _log.info("[rules] forbidden skip group=%s reason=not_enabled", group_id)
+            _log.debug("[群管] 违禁跳过 群号=%s 原因=没开启", group_id)
         return False, ""
     # QQ 群主或管理员默认安全，不送模型也不处置
     if is_qq_group_staff(event):
-        _log.info(
-            "[rules] forbidden skip group=%s reason=staff role=%s",
+        _log.debug(
+            "[群管] 违禁跳过 群号=%s 原因=群管 角色=%s",
             group_id,
             speaker_qq_role(event),
         )
@@ -57,7 +57,7 @@ async def handle_forbidden_message(
 
     # 这一群或全局加了白且没被拉黑，文本、OCR、二维码和群名片都不送模型
     if should_skip_forbidden(whitelist, blacklist, group_id, speaker_id(event)):
-        _log.info("[rules] forbidden skip group=%s reason=whitelist", group_id)
+        _log.debug("[群管] 违禁跳过 群号=%s 原因=白名单", group_id)
         return False, ""
     handled, remind = await handle_forbidden_images(
         event,
@@ -74,7 +74,7 @@ async def handle_forbidden_message(
     )
     # 二维码或图片模型已经处置，文本路不再跑
     if handled:
-        _log.info("[rules] forbidden image hit group=%s", group_id)
+        _log.debug("[群管] 违禁图片已处置 群号=%s", group_id)
         return True, remind
     handled, remind = await handle_forbidden_videos(
         event,
@@ -90,7 +90,7 @@ async def handle_forbidden_message(
     )
     # 短视频二维码或视频模型已经处置，文本路不再跑
     if handled:
-        _log.info("[rules] forbidden video hit group=%s", group_id)
+        _log.debug("[群管] 违禁视频已处置 群号=%s", group_id)
         return True, remind
     return await _handle_forbidden_text(
         config,
@@ -122,8 +122,8 @@ async def _handle_forbidden_text(
     if plan.status != "ready":
         # 空聊天不刷日志；有字或有图才记下跳过原因
         if text.strip() or message_has_image(event):
-            _log.info(
-                "[rules] forbidden text skip group=%s status=%s trigger=%s",
+            _log.debug(
+                "[群管] 违禁文本跳过 群号=%s 状态=%s 触发词=%s",
                 group_id,
                 plan.status,
                 plan.trigger,
@@ -133,8 +133,8 @@ async def _handle_forbidden_text(
     judged = await complete_yes_no(provider, plan.system, plan.user)
     # 只有第一行「是」才处置，否和乱答都不动
     if judged.verdict != "yes":
-        _log.info(
-            "[rules] forbidden text verdict group=%s trigger=%s verdict=%s",
+        _log.debug(
+            "[群管] 违禁文本判定 群号=%s 触发词=%s 判定=%s",
             group_id,
             plan.trigger,
             judged.verdict,
@@ -154,5 +154,5 @@ async def _handle_forbidden_text(
         # 日志文本存这份送审用户文本，和飞书「消息」正文是同一份
         log_text=plan.user,
     )
-    _log.info("[rules] forbidden text hit group=%s trigger=%s", group_id, plan.trigger)
+    _log.debug("[群管] 违禁文本已处置 群号=%s 触发词=%s", group_id, plan.trigger)
     return True, remind

@@ -89,13 +89,13 @@ async def handle_forbidden_images(
     if not comps:
         return False, ""
     names = ",".join(type(comp).__name__ for comp in comps)
-    _log.info("[rules] image start group=%s comps=%s", group_id, names)
+    _log.debug("[群管] 图片检测开始 群号=%s 段=%s", group_id, names)
     hit = await _qr_hit(comps, decoder)
     # 任一图检出就处置，不再 OCR，也不再叫模型
     if hit is not None:
         raw, payloads = hit
         notice = qr_notice_text(QR_SOURCE_IMAGE, payloads)
-        _log.info("[rules] image qr hit group=%s", group_id)
+        _log.debug("[群管] 图片二维码命中 群号=%s", group_id)
         remind = await apply_hit_actions(
             event,
             config,
@@ -112,8 +112,8 @@ async def handle_forbidden_images(
         return True, remind
     text = await _transcript_of(event, comps, transcribe, ocr)
     preview = text.replace("\n", " ")[:80]
-    _log.info(
-        "[rules] image ocr group=%s chars=%s preview=%s",
+    _log.debug(
+        "[群管] 图片转写 群号=%s 字数=%s 预览=%s",
         group_id,
         len(text),
         preview,
@@ -121,8 +121,8 @@ async def handle_forbidden_images(
     plan = plan_image_test(config, text, False, store)
     # 空转写、没触发词或没设定，不打模型
     if plan.status != "ready":
-        _log.info(
-            "[rules] image skip group=%s status=%s msg=%s",
+        _log.debug(
+            "[群管] 图片跳过 群号=%s 状态=%s 说明=%s",
             group_id,
             plan.status,
             plan.message,
@@ -132,8 +132,8 @@ async def handle_forbidden_images(
     judged = await complete_yes_no(provider, plan.system, plan.user)
     # 只有第一行「是」才处置
     if judged.verdict != "yes":
-        _log.info(
-            "[rules] image verdict group=%s verdict=%s",
+        _log.debug(
+            "[群管] 图片判定 群号=%s 判定=%s",
             group_id,
             judged.verdict,
         )
@@ -152,7 +152,7 @@ async def handle_forbidden_images(
         # 图片转写命中也存送审用户文本（含转写正文），和飞书「消息」同一份
         log_text=plan.user,
     )
-    _log.info("[rules] image model hit group=%s", group_id)
+    _log.debug("[群管] 图片转写命中已处置 群号=%s", group_id)
     return True, remind
 
 
@@ -294,21 +294,21 @@ async def _transcript_of(event: object, comps: list, transcribe, ocr=None) -> st
     for comp in comps:
         # 贴纸不当广告图，不跑 OCR
         if skip_vision(comp):
-            _log.info(
-                "[rules] image ocr skip type=%s reason=sticker_or_gif",
+            _log.debug(
+                "[群管] 图片不跑识别 类型=%s 原因=表情或动图",
                 type(comp).__name__,
             )
             continue
         raw = await _comp_b64(comp)
         # 下图失败当这张没字
         if not raw:
-            _log.info("[rules] image ocr skip type=%s reason=no_bytes", type(comp).__name__)
+            _log.debug("[群管] 图片跳过 类型=%s 原因=拿不到图片字节", type(comp).__name__)
             continue
         text = ocr_text_from_b64(raw, ocr)
         # 没认出字就看下一张
         if not text:
-            _log.info(
-                "[rules] image ocr empty type=%s b64=%s",
+            _log.debug(
+                "[群管] 图片没认到字 类型=%s 字节=%s",
                 type(comp).__name__,
                 len(raw),
             )
@@ -322,14 +322,14 @@ async def _comp_b64(comp: object) -> str:
     convert = getattr(comp, "convert_to_base64", None)
     # 表情可能没有这个方法
     if not callable(convert):
-        _log.info("[rules] image b64 skip type=%s reason=no_convert", type(comp).__name__)
+        _log.debug("[群管] 图片跳过 类型=%s 原因=组件不支持转码", type(comp).__name__)
         return ""
     try:
         raw = convert()
         if inspect.isawaitable(raw):
             raw = await raw
     except Exception:  # noqa: BLE001 - 单张失败继续其它图
-        _log.info("[rules] image b64 fail type=%s", type(comp).__name__)
+        _log.debug("[群管] 图片转码失败 类型=%s", type(comp).__name__)
         return ""
     text = str(raw or "")
     if text.startswith("base64://"):

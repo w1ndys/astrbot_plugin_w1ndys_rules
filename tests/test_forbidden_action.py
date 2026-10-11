@@ -14,6 +14,7 @@ from astrbot_plugin_w1ndys_rules.business.forbidden_action import (
     history_messages,
     user_history_ids,
 )
+from astrbot_plugin_w1ndys_rules.business import forbidden_action as forbidden_action_module
 from astrbot_plugin_w1ndys_rules.entity.constants import (
     FORBIDDEN_CFG_MUTE_SECONDS,
     FORBIDDEN_RECALL_HISTORY_COUNT,
@@ -146,3 +147,31 @@ class RecallRecentTest(unittest.IsolatedAsyncioTestCase):
         )
         names = [name for name, _kwargs in event.bot.api.calls]
         self.assertEqual(names, ["delete_msg"])
+
+
+def plugin_logger_name() -> str:
+    """插件日志的 logger 名。装了 AstrBot 时用它自己的 logger，否则是标准 logging 名。"""
+    return getattr(forbidden_action_module._log, "name", "astrbot_plugin_w1ndys_rules")
+
+
+class HitLogTest(unittest.IsolatedAsyncioTestCase):
+    """命中日志：一条 INFO，带群号、发言人和原始 payload。"""
+
+    async def test_hit_logs_group_user_payload(self) -> None:
+        """命中后只打一条中文日志，payload 用原始包。"""
+        event = FakeEvent()
+        event.message_obj.raw_message = {"post_type": "message", "group_id": 123}
+        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+            await apply_hit_actions(
+                event,
+                {FORBIDDEN_CFG_MUTE_SECONDS: 0},
+                "123",
+                "广告",
+                "这里有广告",
+                reason_code=FORBIDDEN_REASON_MODEL,
+            )
+        hits = [line for line in captured.output if "违禁命中" in line]
+        self.assertEqual(len(hits), 1)
+        self.assertIn("群号=123", hits[0])
+        self.assertIn("发言人=10001", hits[0])
+        self.assertIn('"group_id": 123', hits[0])

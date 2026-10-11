@@ -25,6 +25,7 @@ from ..entity.constants import (
 )
 from .forbidden_judge import config_text
 from .forbidden_log import save_hit_log, take_payload
+from .hit_log import log_hit
 from .qq_role import speaker_display_name
 
 
@@ -339,7 +340,7 @@ async def recall_user_recent(event: object, group_id: str) -> None:
     )
     # 协议失败当这页没有历史，当前条已经撤过
     if raw is None:
-        _log.info("[rules] forbidden history skip group=%s reason=no_history", group_id)
+        _log.debug("[群管] 违禁历史跳过 群号=%s 原因=拿不到历史消息", group_id)
         return
     current = _int_id(message_id_of(event))
     ids = user_history_ids(raw, user_id)
@@ -352,8 +353,8 @@ async def recall_user_recent(event: object, group_id: str) -> None:
         # 记成功数，失败的继续下一条
         if ok:
             extra += 1
-    _log.info(
-        "[rules] forbidden history recall group=%s user=%s extra=%s scanned=%s",
+    _log.debug(
+        "[群管] 违禁历史撤回 群号=%s 发言人=%s 追加撤回=%s 扫到=%s",
         group_id,
         user_id,
         extra,
@@ -465,5 +466,7 @@ async def apply_hit_actions(
         log_text,
         log_images,
     )
+    # 命中成功只在这一处打一条，文本、二维码、图片、视频、联系人卡片都走这里
+    log_hit(group_id, sender_id_of(event), event)
     return remind_text(config)
 

@@ -51,8 +51,8 @@ async def handle_verify_private(
     # 不是待验证私聊，后面的流程继续
     if not action:
         return False, "", ""
-    _log.info(
-        "[rules] verify private user=%s action=%s group=%s",
+    _log.debug(
+        "[群管] 私聊交码 发言人=%s 结果=%s 群号=%s",
         user_id,
         action,
         group_id,

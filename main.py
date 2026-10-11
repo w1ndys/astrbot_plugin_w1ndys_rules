@@ -149,7 +149,7 @@ class RulesPlugin(Star):
         self._register_log_pages()
         self._register_settings_pages()
         self._register_group_name_pages()
-        logger.info("[rules] 群规业务库已载入内存：%s", db_path)
+        logger.info("[群管] 群规业务库已载入内存：%s", db_path)
 
     def _start_remind_loop(self) -> None:
         """在当前事件循环挂一条扫 pending 的任务。没有循环就先不挂。"""
@@ -171,7 +171,7 @@ class RulesPlugin(Star):
                 raise
             except Exception:  # noqa: BLE001 - 单次扫失败不能把循环打死
                 # 这一拍出错，下一拍再扫，避免一人坏数据停掉全部提醒
-                logger.exception("[rules] 扫验证提醒失败")
+                logger.exception("[群管] 扫验证提醒失败")
                 continue
 
     async def _tick_reminds(self, now_ts: int = 0) -> None:
@@ -191,7 +191,7 @@ class RulesPlugin(Star):
                 )
             except Exception:  # noqa: BLE001 - 一个人失败不影响别人
                 # 这个人这一拍跳过，其余到期的人继续发
-                logger.exception("[rules] 给 %s/%s 发验证提醒失败", group_id, user_id)
+                logger.exception("[群管] 给 %s/%s 发验证提醒失败", group_id, user_id)
                 continue
 
     def _remember_bot(self, event: object) -> None:
@@ -835,8 +835,8 @@ class RulesPlugin(Star):
 
         # 纯图没有正文，单独记下，方便对照漏检
         if message_has_image(event):
-            logger.info(
-                "[rules] group_msg image group=%s user=%s text_len=%s",
+            logger.debug(
+                "[群管] 群消息带图 群号=%s 发言人=%s 字数=%s",
                 group_id,
                 _sender_id_of(event),
                 len(text),

@@ -635,4 +635,4 @@ def _warn_engine_once() -> None:
     if state == ENGINE_READY:
         return
     _engine_warned = True
-    _log.warning("[rules] qr engine not ready state=%s", state)
+    _log.warning("[群管] 二维码引擎没准备好 状态=%s", state)
