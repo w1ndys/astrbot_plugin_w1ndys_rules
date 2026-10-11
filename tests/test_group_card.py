@@ -51,6 +51,21 @@ NEWS_CARD = {
     },
 }
 
+# 真实推荐好友卡片，来自线上 payload。tag 是「推荐好友」，和群名片同属联系人卡片家族。
+FRIEND_CARD = {
+    "app": "com.tencent.contact.lua",
+    "view": "contact",
+    "bizsrc": "cardshare.cardshare",
+    "prompt": "推荐联系人：某人",
+    "meta": {
+        "contact": {
+            "nickname": "某人",
+            "contact": "账号：10000",
+            "tag": "推荐好友",
+        }
+    },
+}
+
 
 class Json:
     """AstrBot Json 组件替身，按类名识别。"""
@@ -119,6 +134,11 @@ class GroupCardDetectTest(unittest.TestCase):
         event = FakeEvent([Json(NEWS_CARD)])
         self.assertFalse(is_group_card(event))
 
+    def test_friend_reco_card_is_contact_card(self) -> None:
+        # 推荐好友跟群名片同属联系人卡片家族，漏了它就等于广告能绕过拦截
+        event = FakeEvent([Json({"data": json.dumps(FRIEND_CARD, ensure_ascii=False)})])
+        self.assertTrue(is_group_card(event))
+
     def test_plain_text_is_not_group_card(self) -> None:
         event = FakeEvent([Plain("群名片")])
         self.assertFalse(is_group_card(event))
@@ -181,7 +201,7 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(total, 1)
         self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_GROUP_CARD)
-        self.assertEqual(items[0].text, "")
+        self.assertEqual(items[0].text, "群名片：群名 卷心菜大军")
         self.assertIn("群名片", items[0].json_text)
 
     async def test_whitelist_skips_until_blacklisted(self) -> None:

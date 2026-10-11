@@ -40,11 +40,11 @@ def pick_welcome(welcome: WelcomeStore, config: object, group_id: str) -> str:
     override = welcome.get_content(group_id)
     # 独立配置写成空：本群关闭，压过开启名单
     if override is not None and not override.strip():
-        _log.info("[rules] welcome skip group=%s reason=empty_override", group_id)
+        _log.debug("[群管] 欢迎语跳过 群号=%s 原因=本群配了空文案", group_id)
         return ""
     # 空名单即关，没写过独立配置的群保持安静
     if not feature_on(config, CFG_WELCOME_GROUPS, group_id):
-        _log.info("[rules] welcome skip group=%s reason=not_enabled", group_id)
+        _log.debug("[群管] 欢迎语跳过 群号=%s 原因=没开启", group_id)
         return ""
     # 有独立文案就用本群的，不再读全局
     if override is not None:

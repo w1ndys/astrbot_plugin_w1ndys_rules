@@ -522,7 +522,7 @@ class QrEngineStateTest(_EngineStubTest):
         qr_found_in_bytes(b"xx")
         qr_found_in_bytes(b"xx")
         self.assertEqual(len(self._log.warnings), 1)
-        self.assertIn("state=missing", self._log.warnings[0])
+        self.assertIn("状态=missing", self._log.warnings[0])
 
     def test_wechat_construct_failure_is_init_failed(self) -> None:
         # 库导入成功但构造失败要报 init_failed，不能冤枉成没装库

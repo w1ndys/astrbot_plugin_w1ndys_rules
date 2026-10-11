@@ -33,9 +33,9 @@ def _reason_base(reason_code: str, trigger: str) -> str:
         if trigger:
             return f"文本模型命中：{trigger}"
         return "文本模型命中"
-    # 群名片线路，不经模型
+    # 联系人卡片线路，不经模型
     if reason_code == FORBIDDEN_REASON_GROUP_CARD:
-        return "群名片拦截"
+        return "联系人卡片拦截"
     # 本地解出二维码，不经模型
     if reason_code == FORBIDDEN_REASON_QRCODE:
         return "二维码直接违禁"

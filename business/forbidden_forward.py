@@ -186,11 +186,11 @@ async def resolve_audit_text(event: object, message_str: str) -> str:
     if not inner:
         # 只是转发占位却抽不出字，方便对照漏检
         if outer in _PLACEHOLDERS:
-            _log.info("[rules] forward empty placeholder=%s", outer)
+            _log.debug("[群管] 转发抽不出正文 占位符=%s", outer)
         return message_str or ""
     # 外层只是转发占位符，用节点正文去审
     if not outer or outer in _PLACEHOLDERS:
-        _log.info("[rules] forward inner_len=%s", len(inner))
+        _log.debug("[群管] 转发改用内层正文 字数=%s", len(inner))
         return inner
     return outer + "\n" + inner
 

@@ -47,7 +47,7 @@ async def record_join(
     if inviter == user_id:
         return False
     await store.record(group_id, user_id, inviter, _field(raw, "sub_type"))
-    _log.info("[rules] invite record group=%s user=%s inviter=%s", group_id, user_id, inviter)
+    _log.debug("[群管] 邀请记录 群号=%s 发言人=%s 邀请人=%s", group_id, user_id, inviter)
     return True
 
 

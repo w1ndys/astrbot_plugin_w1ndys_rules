@@ -29,5 +29,5 @@ def pick_reply(
     reply = keywords.find_reply(group_id, text)
     # 命中才记，避免每条群聊刷屏
     if reply:
-        _log.info("[rules] keyword hit group=%s", group_id)
+        _log.debug("[群管] 关键词命中 群号=%s", group_id)
     return reply

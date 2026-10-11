@@ -67,12 +67,12 @@ def _rapid_ocr(data: bytes) -> str:
     engine = _load_engine()
     # 没装就不转写，后面不送模型
     if engine is None:
-        _log.info("[rules] ocr skip reason=no_engine")
+        _log.debug("[群管] OCR 跳过 原因=没装识别引擎")
         return ""
     try:
         result = engine(data)
     except Exception:  # noqa: BLE001 - 推理失败当没字
-        _log.info("[rules] ocr fail bytes=%s", len(data))
+        _log.debug("[群管] OCR 失败 字节=%s", len(data))
         return ""
     return _join_texts(result)
 
@@ -89,7 +89,7 @@ def _load_engine():
     # 两个包名都没有
     if builder is None:
         _engine_failed = True
-        _log.warning("[rules] ocr engine missing: install rapidocr")
+        _log.warning("[群管] 没装 rapidocr，图片转写现在用不了：pip install rapidocr")
         return None
     try:
         _engine = builder()
@@ -97,7 +97,7 @@ def _load_engine():
         _engine_failed = True
         # 权重炸了要记下来，诊断才好报 init_failed
         _engine_init_failed = True
-        _log.warning("[rules] ocr engine init failed")
+        _log.warning("[群管] rapidocr 初始化失败，图片转写现在用不了")
         return None
     return _engine
 

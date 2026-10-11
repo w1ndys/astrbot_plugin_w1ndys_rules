@@ -98,10 +98,13 @@ FORBIDDEN_PATTERN_QQ = "QQ号"
 FORBIDDEN_PATTERN_PHONE = "手机号"
 FORBIDDEN_PATTERN_WECHAT = "微信号"
 
-# WebUI：要拦截群名片的群号名单，按条添加。没写的群不拦。
+# WebUI：要拦截联系人卡片（群名片、推荐好友）的群号名单，按条添加。没写的群不拦。
 FORBIDDEN_CFG_BLOCK_GROUP_CARD_GROUPS = "forbidden_block_group_card_groups"
 # 飞书和处置日志里的触发名，不是用户正文，避免把卡片 JSON 里的签名带出去。
-GROUP_CARD_HIT = "群名片"
+GROUP_CARD_HIT = "联系人卡片"
+
+# 卡片身份那行字的最大长度。卡片字段来自外部输入，避免撑爆日志和飞书。
+CARD_IDENTITY_MAX_LEN = 100
 # 违禁日志原因码。人话在业务层拼，飞书仍用短通知。
 FORBIDDEN_REASON_MODEL = "model"
 FORBIDDEN_REASON_GROUP_CARD = "group_card"

@@ -375,7 +375,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         runner = FakeRunner()
         comp = Video()
         event = FakeEvent(messages=[comp], segments=[video_segment(duration=4.01)])
-        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+        with self.assertLogs(plugin_logger_name(), level="DEBUG") as captured:
             handled, _remind = await handle_forbidden_videos(
                 event,
                 ready_config(),
@@ -387,7 +387,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(comp.convert_calls, 0)
         self.assertEqual(runner.extract_count(), 0)
-        self.assertTrue(any("reason=too_long" in line for line in captured.output))
+        self.assertTrue(any("原因=超时长" in line for line in captured.output))
 
     async def test_unknown_duration_skips(self) -> None:
         """原始段没写时长、ffprobe 也读不出来时不处置。"""
@@ -395,7 +395,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         event = FakeEvent(
             messages=[Video()], segments=[video_segment(file_size="1024")]
         )
-        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+        with self.assertLogs(plugin_logger_name(), level="DEBUG") as captured:
             handled, _remind = await handle_forbidden_videos(
                 event,
                 ready_config(),
@@ -406,7 +406,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertFalse(handled)
         self.assertEqual(runner.extract_count(), 0)
-        self.assertTrue(any("reason=no_duration" in line for line in captured.output))
+        self.assertTrue(any("原因=读不到时长" in line for line in captured.output))
 
     async def test_oversize_file_skips_download(self) -> None:
         """原始段报的大小超过 20MB 时不下载，也不抽帧。"""
@@ -418,7 +418,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
                 video_segment(duration=3.5, file_size=SHORT_VIDEO_MAX_FILE_BYTES + 1)
             ],
         )
-        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+        with self.assertLogs(plugin_logger_name(), level="DEBUG") as captured:
             handled, _remind = await handle_forbidden_videos(
                 event,
                 ready_config(),
@@ -430,12 +430,12 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(comp.convert_calls, 0)
         self.assertEqual(runner.extract_count(), 0)
-        self.assertTrue(any("reason=too_large" in line for line in captured.output))
+        self.assertTrue(any("原因=文件太大" in line for line in captured.output))
 
     async def test_missing_tool_skips_now_and_later(self) -> None:
         """缺 ffprobe 或 ffmpeg 时不处置，后面的短视频也不再试抽帧。"""
         event = FakeEvent(messages=[Video()], segments=[video_segment()])
-        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+        with self.assertLogs(plugin_logger_name(), level="DEBUG") as captured:
             handled, _remind = await handle_forbidden_videos(
                 event,
                 ready_config(),
@@ -446,7 +446,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertFalse(handled)
         self.assertTrue(forbidden_video._tools_missing)
-        self.assertTrue(any("reason=tool_missing" in line for line in captured.output))
+        self.assertTrue(any("原因=没装抽帧工具" in line for line in captured.output))
 
         later = FakeRunner()
         handled, _remind = await handle_forbidden_videos(
@@ -464,7 +464,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
         """本地文件拿不到就跳过这一段，不处置。"""
         comp = Video(fail=True)
         event = FakeEvent(messages=[comp], segments=[video_segment(duration=3.5)])
-        with self.assertLogs(plugin_logger_name(), level="INFO") as captured:
+        with self.assertLogs(plugin_logger_name(), level="DEBUG") as captured:
             handled, _remind = await handle_forbidden_videos(
                 event,
                 ready_config(),
@@ -474,7 +474,7 @@ class VideoHandleTest(unittest.IsolatedAsyncioTestCase):
                 runner=FakeRunner(),
             )
         self.assertFalse(handled)
-        self.assertTrue(any("reason=no_file" in line for line in captured.output))
+        self.assertTrue(any("原因=拿不到本地文件" in line for line in captured.output))
 
     async def test_qr_hit_skips_ocr_and_model(self) -> None:
         """任一帧检出二维码就按二维码处置，不再 OCR、不再叫模型。日志存该帧和解析内容。"""
