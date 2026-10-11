@@ -1,4 +1,4 @@
-# 业务层：WebUI 名单里的群拦截 QQ 群名片卡片。
+# 业务层：WebUI 名单里的群拦截联系人卡片（群名片、推荐好友）。
 # 单独线路，不看触发词，不送模型。命中后走和违禁词一样的撤回、禁言、飞书。
 
 import json
@@ -67,7 +67,7 @@ async def handle_group_card(
 
 
 def is_group_card(event: object) -> bool:
-    """消息链里有没有 QQ 群名片卡片。只认真实群名片结构，不把所有 Json 当群名片。"""
+    """消息链里有没有联系人卡片。群名片和推荐好友都算，不把所有 Json 当卡片。"""
     getter = getattr(event, "get_messages", None)
     # 残缺事件没有消息链
     if not callable(getter):
@@ -77,18 +77,21 @@ def is_group_card(event: object) -> bool:
         if type(comp).__name__ != "Json":
             continue
         card = _unwrap_card(getattr(comp, "data", None))
-        # 解出群名片特征就拦
-        if _looks_like_group_card(card):
+        # 解出联系人卡片特征就拦
+        if _looks_like_contact_card(card):
             return True
     return False
 
 
 
-def _looks_like_group_card(card: dict) -> bool:
-    """按真实群名片 payload 认：prompt 前缀、qun.share、或 contact.tag。"""
+def _looks_like_contact_card(card: dict) -> bool:
+    """按真实卡片 payload 认联系人卡片家族：群名片和推荐好友都算。"""
     # 解不开就不是
     if not card:
         return False
+    # 两者共用 app 和 view，这是联系人卡片家族的稳定特征，比 prompt 文案可靠
+    if card.get("app") == "com.tencent.contact.lua" and card.get("view") == "contact":
+        return True
     prompt = card.get("prompt")
     # QQ 预览就是「群名片: 群名」
     if isinstance(prompt, str) and prompt.startswith("群名片"):
