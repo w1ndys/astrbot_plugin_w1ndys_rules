@@ -201,7 +201,7 @@ class GroupCardHandleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         self.assertEqual(total, 1)
         self.assertEqual(items[0].reason_code, FORBIDDEN_REASON_GROUP_CARD)
-        self.assertEqual(items[0].text, "")
+        self.assertEqual(items[0].text, "群名片：群名 卷心菜大军")
         self.assertIn("群名片", items[0].json_text)
 
     async def test_whitelist_skips_until_blacklisted(self) -> None:
