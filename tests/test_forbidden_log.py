@@ -113,7 +113,7 @@ class BoomLogStore(ForbiddenLogStore):
 class ReasonTextTest(unittest.TestCase):
     def test_known_codes(self) -> None:
         self.assertEqual(reason_text(FORBIDDEN_REASON_MODEL, "广告"), "文本模型命中：广告")
-        self.assertEqual(reason_text(FORBIDDEN_REASON_GROUP_CARD, "群名片"), "群名片拦截")
+        self.assertEqual(reason_text(FORBIDDEN_REASON_GROUP_CARD, "群名片"), "联系人卡片拦截")
         self.assertEqual(reason_text(FORBIDDEN_REASON_QRCODE, ""), "二维码直接违禁")
         self.assertEqual(
             reason_text(FORBIDDEN_REASON_IMAGE_MODEL, ""),

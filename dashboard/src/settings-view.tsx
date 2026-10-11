@@ -30,7 +30,7 @@ const FEATURES: FeatureItem[] = [
   { key: "welcome_groups", title: "欢迎语" },
   { key: "verify_groups", title: "入群验证" },
   { key: "invite_groups", title: "邀请树" },
-  { key: "forbidden_block_group_card_groups", title: "拦截群名片" },
+  { key: "forbidden_block_group_card_groups", title: "拦截联系人卡片" },
 ];
 
 // 表格一行：群号加六个功能开关。

@@ -93,12 +93,12 @@ class ForbiddenLogStoreTest(unittest.IsolatedAsyncioTestCase):
             "123", "9", FORBIDDEN_REASON_MODEL, "旧", "原文", "[1]", "[2]"
         )
         ok = await self.store.update_reason(
-            log_id, FORBIDDEN_REASON_GROUP_CARD, "群名片拦截"
+            log_id, FORBIDDEN_REASON_GROUP_CARD, "联系人卡片拦截"
         )
         self.assertTrue(ok)
         row = self.store.get(log_id)
         self.assertEqual(row.reason_code, FORBIDDEN_REASON_GROUP_CARD)
-        self.assertEqual(row.reason_text, "群名片拦截")
+        self.assertEqual(row.reason_text, "联系人卡片拦截")
         self.assertEqual(row.text, "原文")
         self.assertEqual(row.json_text, "[1]")
         self.assertEqual(row.images, "[2]")
