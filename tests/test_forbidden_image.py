@@ -164,7 +164,7 @@ class ImageHandleTest(unittest.IsolatedAsyncioTestCase):
             "123",
             "",
             get_provider,
-            decoder=lambda data: True,
+            decoder=lambda data: ["https://qm.qq.com/q/abc"],
         )
         self.assertTrue(handled)
         self.assertEqual(provider.calls, 0)

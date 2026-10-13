@@ -63,7 +63,7 @@ def qr_found_in_bytes(data: bytes, decoder=None) -> bool:
 
 
 def qr_read_bytes(data: bytes, decoder=None) -> tuple:
-    """返回是否检出，以及截断后的解析文本。有框没文本时仍检出，文本列表为空。"""
+    """返回是否检出，以及截断后的解析文本。没有非空文本就不算检出。"""
     # 空图解不了，三级都不加载
     if not data:
         return False, []
@@ -98,10 +98,12 @@ def qr_read_b64(raw: str, decoder=None) -> tuple:
 
 
 def _decoder_read(result: object) -> tuple:
-    """替身返回值收成检出和文本。True 表示有码但没有解析内容。"""
+    """替身返回值收成检出和文本。没有解析文本就不算检出。"""
     payloads = _payload_list(_decoder_texts(result))
-    # 布尔 True 或框列表仍然算检出，文本另收
-    return bool(result), payloads
+    # 布尔 True 和只有框都没有可用内容，不能据此违禁
+    if not payloads:
+        return False, []
+    return True, payloads
 
 
 def _decoder_texts(result: object) -> list:
@@ -149,7 +151,7 @@ def _three_layer_hit(image) -> bool:
     # zxing 命中就不用构造 QReader 模型
     if _zxing_layer_hit(image):
         return True
-    # 前两级都没解出来，最后才用 QReader 兜住「有框没文本」
+    # 前两级都没解出文本时，QReader 也只认解析出的文本，有框没文本继续当未检出
     if _qreader_layer_hit(image):
         return True
     # 三级都未检出，引擎总状态不是 ready 时记一次 warning，免得漏检没痕迹
@@ -241,7 +243,7 @@ def _zxing_item_hit(item: object, allowed: tuple) -> bool:
 
 
 def _qreader_layer_hit(image) -> bool:
-    """第三级 QReader：有检测框或非空文本都算检出，库缺失或异常当未检出。"""
+    """第三级 QReader：有非空解析文本才算检出，只有框或异常都当未检出。"""
     reader = _load_qreader()
     # 这一层没起来就跳过，总状态由外面的 warning 统一记一次
     if reader is None:
@@ -332,23 +334,12 @@ def _load_qreader():
 
 
 def _reader_hit(reader: object, image: object) -> bool:
-    """有 detect 就看框；否则看 decode 出的非空载荷。"""
-    detect = getattr(reader, "detect", None)
-    # detect 只回答有没有码，不看内容
-    if callable(detect):
-        boxes = detect(image=image)
-        return _has_items(boxes)
-    decode = getattr(reader, "detect_and_decode", None)
-    # 老接口只返回文本
-    if not callable(decode):
+    """有非空解析文本才算检出。只有检测框不算。"""
+    try:
+        texts = _reader_texts(reader, image)
+    except Exception:  # noqa: BLE001 - 文本解码失败没有结果，不能误禁
         return False
-    texts = decode(image=image)
-    # 一个非空载荷就够
-    for item in texts or []:
-        # 空串不是码
-        if item:
-            return True
-    return False
+    return _nonblank_text_count(texts) > 0
 
 
 def _has_items(value: object) -> bool:
@@ -366,7 +357,7 @@ def _has_items(value: object) -> bool:
 def _reader_texts(reader: object, image: object) -> list:
     """QReader 的文本序列。没有 detect_and_decode 就是空列表。"""
     decode = getattr(reader, "detect_and_decode", None)
-    # 老接口连文本方法都没有，只有框能算检出
+    # 没有文本方法就拿不到解析结果，不能只靠框判违禁
     if not callable(decode):
         return []
     return _text_items(decode(image=image))
@@ -386,11 +377,11 @@ def _qreader_counts(reader: object, image: object) -> tuple:
 
 
 def _qreader_payloads(reader: object, image: object, box_count: int) -> list:
-    """取 QReader 文本。有框时解码失败仍保留框，不当成这一层没检出。"""
+    """取 QReader 文本。解码失败时不把框当成解析结果。"""
     try:
         return _payload_list(_reader_texts(reader, image))
     except Exception:  # noqa: BLE001 - 文本解码失败不能把已经数到的框抹掉
-        # 框已经说明有码，文本失败只是页面看不到载荷
+        # 文本失败就没有可违禁的结果，框留给调用方决定是否展示
         if box_count > 0:
             return []
         raise
@@ -443,7 +434,8 @@ def qr_diagnose_bytes(data: bytes, decoder=None) -> dict:
         except Exception as exc:  # noqa: BLE001 - 替身异常当未检出，不误禁
             return _diag_result(ENGINE_READY, False, 0, [], type(exc).__name__, "")
         box_count, payloads = _decoder_counts(result)
-        return _diag_result(ENGINE_READY, _has_items(result), box_count, payloads, "", "")
+        # 诊断页的是否检出和热路径同一口径，没有解析文本就不算检出
+        return _diag_result(ENGINE_READY, bool(payloads), box_count, payloads, "", "")
     image = _bgr_from_bytes(data)
     # 解不出 BGR 说明这些字节不是图片，三级都不调用；状态只报已试过的层，
     # 不能把「图坏了」写成引擎 missing
@@ -469,7 +461,7 @@ def _diagnose_three_layers(image) -> dict:
     # 最后一级没抛异常就沿用前面失败层的类型名，三级都异常时留最后一级的类型名
     if not qreader_error:
         qreader_error = zxing_error
-    # 有框或有非空文本都算 QReader 层命中
+    # 只有非空解析文本才算 QReader 层命中，只有框不算
     if layer:
         return _diag_from_layer(layer, box_count, payloads, qreader_error)
     # 三级都未检出：命中层留空串，错误名保留最后一层失败的类型名
@@ -516,7 +508,7 @@ def _zxing_diagnose(image) -> tuple:
 
 
 def _qreader_diagnose(image) -> tuple:
-    """QReader 层诊断：走到这一级才把 BGR 转 RGB，有框或有非空文本都算命中。"""
+    """QReader 层诊断：走到这一级才把 BGR 转 RGB，没有解析文本就不算命中。"""
     reader = _load_qreader()
     # 这一层没起来就跳过，总状态按已试过的层算
     if reader is None:
@@ -525,8 +517,8 @@ def _qreader_diagnose(image) -> tuple:
         box_count, payloads = _qreader_counts(reader, _bgr_to_rgb(image))
     except Exception as exc:  # noqa: BLE001 - 检测模型异常不能误禁，只记类型名
         return "", 0, [], type(exc).__name__
-    # 有框没文本也算命中，这时候载荷是空列表
-    if box_count == 0 and not payloads:
+    # 只有框或解码失败都没有可用内容，不能把这张图报成违禁
+    if not payloads:
         return "", 0, [], ""
     return _LAYER_QREADER, box_count, payloads, ""
 
