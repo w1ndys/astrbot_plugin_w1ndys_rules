@@ -652,7 +652,7 @@ class VideoGateTest(unittest.IsolatedAsyncioTestCase):
             "123",
             "",
             provider_getter(FakeProvider("是")),
-            decoder=lambda _data: True,
+            decoder=lambda _data: ["https://qm.qq.com/q/frame"],
         )
         self.assertTrue(handled)
         self.assertEqual(video.convert_calls, 0)

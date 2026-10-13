@@ -39,8 +39,9 @@ class FakeReader:
 
 
 class QrFoundTest(unittest.TestCase):
-    def test_decoder_true(self) -> None:
-        self.assertTrue(qr_found_in_bytes(b"xx", decoder=lambda _data: True))
+    def test_decoder_true_without_text_is_not_found(self) -> None:
+        # 只有布尔 True 没有解析文本，不能当成违禁
+        self.assertFalse(qr_found_in_bytes(b"xx", decoder=lambda _data: True))
 
     def test_decoder_boom_is_false(self) -> None:
         def boom(_data):
@@ -55,14 +56,15 @@ class QrFoundTest(unittest.TestCase):
         self.assertFalse(qr_found_in_b64("", decoder=lambda _data: True))
 
     def test_b64_without_padding(self) -> None:
-        # YQ== 去掉 padding 仍是字母 a
-        self.assertTrue(qr_found_in_b64("YQ", decoder=lambda _data: True))
+        # YQ== 去掉 padding 仍是字母 a；有解析文本才算检出
+        self.assertTrue(qr_found_in_b64("YQ", decoder=lambda _data: ["http://qr"]))
 
 
 class ReaderHitTest(unittest.TestCase):
-    def test_detect_boxes(self) -> None:
-        reader = FakeReader(boxes=[{"x": 1}])
-        self.assertTrue(_reader_hit(reader, object()))
+    def test_detect_boxes_without_text(self) -> None:
+        # 只有检测框、没有解析文本，不算检出
+        reader = FakeReader(boxes=[{"x": 1}], texts=[])
+        self.assertFalse(_reader_hit(reader, object()))
 
     def test_detect_empty(self) -> None:
         reader = FakeReader(boxes=[])
@@ -278,10 +280,11 @@ class QrDiagnoseTest(_EngineStubTest):
         forbidden_qr._bgr_from_bytes = lambda _data: object()
         forbidden_qr._bgr_to_rgb = lambda _image: object()
 
-    def test_decoder_boxes_ready_and_found(self) -> None:
+    def test_decoder_boxes_without_text_are_not_found(self) -> None:
+        # 替身只给框、不给文本：数量还能看见，但不算检出
         diag = qr_diagnose_bytes(b"xx", decoder=lambda _data: [{"x": 1}])
         self.assertEqual(diag["engine"], "ready")
-        self.assertTrue(diag["found"])
+        self.assertFalse(diag["found"])
         self.assertEqual(diag["box_count"], 1)
         self.assertEqual(diag["error"], "")
 
@@ -311,8 +314,9 @@ class QrDiagnoseTest(_EngineStubTest):
         self.assertEqual(diag["box_count"], 0)
         self.assertEqual(diag["payloads"], [])
 
-    def test_engine_ready_with_boxes(self) -> None:
-        forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=[])
+    def test_engine_ready_with_text(self) -> None:
+        # 有解析文本才算检出；框数量仍按检测框报
+        forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=["http://qr"])
         forbidden_qr._qreader_state = "ready"
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["engine"], "ready")
@@ -411,22 +415,21 @@ class QrDiagLayerTest(_EngineStubTest):
         self.assertEqual(diag["payloads"], ["http://zxing"])
         self.assertEqual(diag["qreader"], "")
 
-    def test_only_qreader_box_hit_reports_qreader(self) -> None:
-        # 只有 QReader 有框：命中层报 QReader，数量是框数，载荷可以是空列表
+    def test_only_qreader_box_is_not_found(self) -> None:
+        # 只有 QReader 有框、没有文本：不算检出，也不能报成命中层
         forbidden_qr._wechat_state = "missing"
         forbidden_qr._zxing_state = "missing"
         forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}, {"x": 2}], texts=[""])
         forbidden_qr._qreader_state = "ready"
         diag = qr_diagnose_bytes(b"xx")
-        self.assertEqual(diag["layer"], "qreader")
-        self.assertTrue(diag["found"])
-        self.assertEqual(diag["box_count"], 2)
+        self.assertEqual(diag["layer"], "")
+        self.assertFalse(diag["found"])
         self.assertEqual(diag["payloads"], [])
         self.assertEqual(diag["wechat"], "missing")
         self.assertEqual(diag["zxing"], "missing")
 
-    def test_qreader_box_survives_decode_error(self) -> None:
-        """有框时文本解码失败仍算检出，不能把热路径会禁的图报成未检出。"""
+    def test_qreader_decode_error_is_not_found(self) -> None:
+        """文本解码失败就没有解析结果，不能报成检出。"""
 
         class BoomDecode(FakeReader):
             """detect 正常，detect_and_decode 抛异常。"""
@@ -440,9 +443,8 @@ class QrDiagLayerTest(_EngineStubTest):
         forbidden_qr._qreader = BoomDecode(boxes=[{"x": 1}], texts=[])
         forbidden_qr._qreader_state = "ready"
         diag = qr_diagnose_bytes(b"xx")
-        self.assertEqual(diag["layer"], "qreader")
-        self.assertTrue(diag["found"])
-        self.assertEqual(diag["box_count"], 1)
+        self.assertEqual(diag["layer"], "")
+        self.assertFalse(diag["found"])
         self.assertEqual(diag["payloads"], [])
 
     def test_no_layer_hit_has_empty_layer(self) -> None:
@@ -459,12 +461,12 @@ class QrDiagLayerTest(_EngineStubTest):
         self.assertEqual(diag["payloads"], [])
 
     def test_failed_layer_error_name_survives_later_hit(self) -> None:
-        # 微信层抛异常、QReader 兜住：仍报检出，error 留前面失败层的类型名
+        # 微信层抛异常、QReader 解出文本：仍报检出，error 留前面失败层的类型名
         forbidden_qr._wechat = _WeChatStub(boom=True)
         forbidden_qr._wechat_state = "ready"
         forbidden_qr._zxing = _ZxingValueErrorStub()
         forbidden_qr._zxing_state = "ready"
-        forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=[])
+        forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=["http://qr"])
         forbidden_qr._qreader_state = "ready"
         diag = qr_diagnose_bytes(b"xx")
         self.assertEqual(diag["layer"], "qreader")
@@ -570,7 +572,7 @@ class QrLayerOrderTest(_EngineStubTest):
 
     def test_decoder_path_touches_no_layer(self) -> None:
         # 注入替身时三级加载函数都不该跑，状态留空串说明一层都没导入
-        self.assertTrue(qr_found_in_bytes(b"xx", decoder=lambda _data: True))
+        self.assertTrue(qr_found_in_bytes(b"xx", decoder=lambda _data: ["http://qr"]))
         self.assertEqual(forbidden_qr._wechat_state, "")
         self.assertEqual(forbidden_qr._zxing_state, "")
         self.assertEqual(forbidden_qr._qreader_state, "")
@@ -671,13 +673,13 @@ class QrLayerOrderTest(_EngineStubTest):
         self.assertFalse(qr_found_in_bytes(b"xx"))
         self.assertEqual(zxing.calls, [{}])
 
-    def test_qreader_box_only_is_found(self) -> None:
-        # 前两级都没解出时，QReader 有框没文本也算检出
+    def test_qreader_box_only_is_not_found(self) -> None:
+        # 前两级都没解出时，QReader 只有框、没有文本，也不算检出
         forbidden_qr._wechat_state = "missing"
         forbidden_qr._zxing_state = "missing"
         forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=[])
         forbidden_qr._qreader_state = "ready"
-        self.assertTrue(qr_found_in_bytes(b"xx"))
+        self.assertFalse(qr_found_in_bytes(b"xx"))
 
     def test_all_layers_boom_is_not_found(self) -> None:
         # 三级各自抛异常都只算未检出，不能误禁
