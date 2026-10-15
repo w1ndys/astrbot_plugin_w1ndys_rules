@@ -164,6 +164,27 @@ ENGINE_READY = "ready"
 ENGINE_MISSING = "missing"
 ENGINE_INIT_FAILED = "init_failed"
 
+# 视觉环境体检：插件依赖的库，左边是 import 名，右边是 pip 包名。启动时只查能不能导入，
+# 不构造引擎、不加载模型。缺哪个就把对照写进给管理员的私聊。
+VISUAL_PACKAGES = (
+    ("qreader", "qreader"),
+    ("cv2", "opencv-contrib-python"),
+    ("cv2.wechat_qrcode", "opencv-contrib-python"),
+    ("zxingcpp", "zxing-cpp"),
+    ("rapidocr", "rapidocr"),
+    ("onnxruntime", "onnxruntime"),
+)
+# 私聊里附的补装命令。两条顺序不能换：torch 先走阿里云 CPU 轮子（这台机器没 GPU，
+# 默认源会拖 CUDA 包），剩下的再按 requirements.txt 从清华源装。
+VISUAL_INSTALL_COMMANDS = (
+    "pip install -i https://pypi.tuna.tsinghua.edu.cn/simple"
+    " -f https://mirrors.aliyun.com/pytorch-wheels/cpu/ torch==2.6.0+cpu",
+    "pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple",
+)
+# 环境提醒要等平台适配器起来：每 5 秒看一次，最多 24 次（约 2 分钟）就放弃。
+ENV_NOTICE_WAIT_SECONDS = 5
+ENV_NOTICE_MAX_TRIES = 24
+
 # 入群验证：6 位数字码。入群立刻禁 30 天（QQ 上限）。WebUI 秒数字段仍保留，交码失败不再用它禁言。
 VERIFY_CODE_LEN = 6
 DEFAULT_VERIFY_MUTE_SECONDS = 2592000

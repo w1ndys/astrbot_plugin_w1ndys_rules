@@ -35,6 +35,7 @@ from .business.blacklist_admin import (
     list_users,
 )
 from .business.debug_payload import inspect_payload
+from .business.env_notice import missing_packages, notice_text
 from .business.forbidden_action import call_result
 from .business.forbidden_backfill import (
     backfill_group,
@@ -107,6 +108,8 @@ from .entity.constants import (
     BLACKLIST_GLOBAL_SCOPE,
     BLACKLIST_LIST_LIMIT,
     DB_FILE_NAME,
+    ENV_NOTICE_MAX_TRIES,
+    ENV_NOTICE_WAIT_SECONDS,
     IMAGE_TEST_MAX_BYTES,
     PLUGIN_NAME,
     VERIFY_JOIN_MUTE_SECONDS,
@@ -141,6 +144,8 @@ class RulesPlugin(Star):
         # 提醒循环没有真实事件，发群消息要用这里记下的 OneBot。
         self._onebot = None
         self._remind_task = None
+        # 环境提醒任务：缺依赖时等平台起来再私聊管理员。
+        self._env_notice_task = None
         self._start_remind_loop()
         self._register_forbidden_page()
         self._register_keyword_pages()
@@ -230,10 +235,39 @@ class RulesPlugin(Star):
         return None
 
 
-    async def terminate(self) -> None:
-        """热重载或卸载时取消提醒循环，避免旧任务继续发。"""
-        task = self._remind_task
-        # 没挂上循环就不用取消
+    async def initialize(self) -> None:
+        """插件激活时体检视觉依赖。缺东西就私聊管理员，只提醒不自动装。"""
+        missing = missing_packages()
+        # 依赖齐全，不用打扰管理员
+        if not missing:
+            return
+        admins = _admin_ids(self.context)
+        # 没有可私聊的管理员（默认占位不是 QQ 号）就只留日志
+        if not admins:
+            logger.warning("[群管] 视觉依赖缺 %s，但没有可私聊的管理员", missing)
+            return
+        text = notice_text(missing)
+        # 插件加载时平台适配器还没起来，挂任务等它，别把加载堵住
+        loop = asyncio.get_running_loop()
+        self._env_notice_task = loop.create_task(self._send_env_notice(admins, text))
+
+    async def _send_env_notice(self, admins: list, text: str) -> None:
+        """等平台适配器起来后私聊每位管理员。等不到就记日志放弃。"""
+        for _ in range(ENV_NOTICE_MAX_TRIES):
+            bot = self._onebot_from_context()
+            # 平台还没起来，隔一会儿再看
+            if bot is None:
+                await asyncio.sleep(ENV_NOTICE_WAIT_SECONDS)
+                continue
+            event = _BotEvent(bot)
+            for admin in admins:
+                await send_private_plain(event, admin, text)
+            return
+        logger.warning("[群管] 等不到平台适配器，视觉依赖提醒没发出去")
+
+    async def _cancel_background_task(self, task) -> None:
+        """取消一个后台任务并等它停。没挂上就什么都不做。"""
+        # 还没挂任务
         if task is None:
             return
         task.cancel()
@@ -241,6 +275,11 @@ class RulesPlugin(Star):
             await task
         except asyncio.CancelledError:
             return
+
+    async def terminate(self) -> None:
+        """热重载或卸载时取消提醒循环和环境提醒任务，避免旧任务继续发。"""
+        await self._cancel_background_task(self._remind_task)
+        await self._cancel_background_task(self._env_notice_task)
 
     def _register_forbidden_page(self) -> None:
         """注册违禁词和图片检测的 WebUI 测试接口。旧 AstrBot 没有这套 API 就跳过。"""
@@ -1228,6 +1267,32 @@ def _can_call_action(bot: object) -> bool:
     api = getattr(bot, "api", None)
     chat = getattr(api, "call_action", None)
     return callable(chat)
+
+
+def _admin_ids(context: object) -> list:
+    """从 AstrBot 全局配置取管理员 QQ。默认占位（astrbot 这类）不算。"""
+    getter = getattr(context, "get_config", None)
+    # 老版本没有 get_config 就没人可发
+    if not callable(getter):
+        return []
+    try:
+        config = getter()
+    except Exception:  # noqa: BLE001 - 读配置失败当成没配
+        return []
+    raw = config.get("admins_id") if hasattr(config, "get") else None
+    # 配置里可能只写了一个字符串
+    if isinstance(raw, str):
+        raw = [raw]
+    # 没有这一项或类型不对就没人可发
+    if not isinstance(raw, (list, tuple)):
+        return []
+    result = []
+    for item in raw:
+        text = str(item).strip()
+        # 纯数字才是 QQ 号，默认的 astrbot 这种占位发不出去
+        if text.isdigit():
+            result.append(text)
+    return result
 
 
 
