@@ -121,6 +121,8 @@ class VerifyRemindEntryTest(unittest.IsolatedAsyncioTestCase):
         self.plugin.verify = VerifyStore(Path(self._tmp.name) / "rules.db")
         self.plugin._onebot = None
         self.plugin._remind_task = None
+        # 环境提醒任务同样要有个初值，terminate 会一起取消
+        self.plugin._env_notice_task = None
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
