@@ -582,7 +582,7 @@ def _payload_list(values: object) -> list:
 
 
 def _text_items(values: object) -> list:
-    """把引擎或替身的返回收成待检查的文本项。"""
+    """把引擎或替身的返回收成待检查的文本项。None 表示有框但没解出文本。"""
     # 没有输出
     if values is None:
         return []
@@ -590,10 +590,17 @@ def _text_items(values: object) -> list:
     if isinstance(values, (str, bytes)):
         return [values]
     try:
-        return list(values)
+        items = list(values)
     except TypeError:
         # 单个载荷对象也算一条
         return [values]
+    result = []
+    for item in items:
+        # QReader 按框逐个返回，解不出的位置是 None；写成文本会变成「None」被当成违禁
+        if item is None:
+            continue
+        result.append(item)
+    return result
 
 
 def _diag_result(

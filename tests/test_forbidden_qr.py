@@ -66,6 +66,11 @@ class ReaderHitTest(unittest.TestCase):
         reader = FakeReader(boxes=[{"x": 1}], texts=[])
         self.assertFalse(_reader_hit(reader, object()))
 
+    def test_decode_none_is_not_hit(self) -> None:
+        # 引擎对解不出的框逐个回 None，不能写成文字「None」算命中
+        reader = FakeReader(boxes=[{"x": 1}], texts=[None])
+        reader.detect = None
+        self.assertFalse(_reader_hit(reader, object()))
     def test_detect_empty(self) -> None:
         reader = FakeReader(boxes=[])
         self.assertFalse(_reader_hit(reader, object()))
@@ -427,6 +432,17 @@ class QrDiagLayerTest(_EngineStubTest):
         self.assertEqual(diag["payloads"], [])
         self.assertEqual(diag["wechat"], "missing")
         self.assertEqual(diag["zxing"], "missing")
+
+    def test_qreader_none_text_is_not_found(self) -> None:
+        # 有框但文本是 None：页面不写「None」，也不算检出
+        forbidden_qr._wechat_state = "missing"
+        forbidden_qr._zxing_state = "missing"
+        forbidden_qr._qreader = FakeReader(boxes=[{"x": 1}], texts=[None])
+        forbidden_qr._qreader_state = "ready"
+        diag = qr_diagnose_bytes(b"xx")
+        self.assertEqual(diag["layer"], "")
+        self.assertFalse(diag["found"])
+        self.assertEqual(diag["payloads"], [])
 
     def test_qreader_decode_error_is_not_found(self) -> None:
         """文本解码失败就没有解析结果，不能报成检出。"""
