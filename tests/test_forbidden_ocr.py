@@ -58,6 +58,15 @@ class CollectTextsTest(unittest.TestCase):
     def test_none(self) -> None:
         self.assertEqual(_collect_texts(None), [])
 
+    def test_txts_none_is_empty(self) -> None:
+        # 没认到字时 RapidOCR 3.x 给 txts=None，不能把对象 str() 成一行 repr
+        self.assertEqual(_collect_texts(FakeOutput(None)), [])
+        self.assertEqual(_join_texts(FakeOutput(None)), "")
+
+    def test_unknown_shape_is_empty(self) -> None:
+        # 认不出的形状当没字，不把对象本身当成文字
+        self.assertEqual(_collect_texts({"texts": ["字"]}), [])
+
 
 # sys.modules 里原本没有这个键时记下的哨兵，还原时按它决定删不删
 _MISSING = object()
@@ -145,6 +154,13 @@ class OcrDiagnoseTest(unittest.TestCase):
 
     def test_reader_empty_result_keeps_ready(self) -> None:
         diag = ocr_diagnose_bytes(b"xx", reader=lambda _data: None)
+        self.assertEqual(diag["engine"], "ready")
+        self.assertEqual(diag["text"], "")
+        self.assertEqual(diag["error"], "")
+
+    def test_reader_output_object_without_text(self) -> None:
+        # 页面路径：3.x 返回对象但没认到字，文本要留空
+        diag = ocr_diagnose_bytes(b"xx", reader=lambda _data: FakeOutput(None))
         self.assertEqual(diag["engine"], "ready")
         self.assertEqual(diag["text"], "")
         self.assertEqual(diag["error"], "")

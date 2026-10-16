@@ -141,21 +141,29 @@ def _collect_texts(value: object) -> list:
     # 测试注入直接给字符串
     if isinstance(value, str):
         return [value]
-    txts = getattr(value, "txts", None)
-    # 新接口 RapidOCROutput.txts
-    if txts:
-        return list(txts)
-    rec = getattr(value, "rec_texts", None)
+    # 新接口 RapidOCROutput：没认到字时 txts 是 None，这时也必须当没字。
+    # 以前兜底成 [value]，对象会被 str() 成一行 repr 显示在图片检测测试页。
+    if hasattr(value, "txts"):
+        return _field_texts(getattr(value, "txts", None))
     # 另一字段名也是识别结果
-    if rec:
-        return list(rec)
+    if hasattr(value, "rec_texts"):
+        return _field_texts(getattr(value, "rec_texts", None))
     # 老接口 (result, elapse)
     if isinstance(value, tuple) and value:
         return _collect_texts(value[0])
     # [[box, text, score], ...]
     if isinstance(value, list):
         return _texts_from_rows(value)
-    return [value]
+    # 认不出的形状当没字，不能把对象本身当成文字
+    return []
+
+
+def _field_texts(values: object) -> list:
+    """收新接口的文本字段。空的和 None 都是没认到字。"""
+    # 没认到字时 RapidOCR 给 None
+    if not values:
+        return []
+    return list(values)
 
 
 def _texts_from_rows(rows: list) -> list:
