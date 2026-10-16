@@ -88,6 +88,15 @@ rules 不得为了判断入群继续依赖 welcome 的 `welcome_send.py`；也�
 - 打印前走 `payload_text → to_plain → mask_payload`；字典/列表递归、敏感字段及URL参数打码保留。PR #25增加 `mask_text`、`_try_json`、`_mask_json_pairs`，覆盖JSON以字符串嵌套、CQ字符串及字符串内地址签名；沿用现有测试，不记录未脱敏载荷作为兜底。
 - 字段名敏感片段匹配保持现有token/sig/sign/secret/password/passwd/key/auth口径。宽泛key匹配可能多遮；不在拆分中顺手改匹配策略、精简payload字段或翻译状态码。修复不代表历史已输出日志自动脱敏，生产日志处置另行授权。
 
+### 二维码违禁口径（PR #29）
+
+搬迁 `business/forbidden_qr.py` 时以合并提交 `3da1600` 为准。`1520769` 里 QReader「有框没文本也算检出」已经作废，拆分不得恢复。
+
+- 热路径 `qr_read_bytes`、`qr_found_in_bytes` 和诊断字段 `found` 只在去空白后的解析文本非空时为真。只有检测框、解码异常、空白文本或替身布尔真都不是违禁。
+- 微信、zxing、QReader 的顺序不变。没有解析文本时不报命中层，框不能单独构成违禁。
+- 没有解析结果时不走二维码处置。图片继续转写；短视频帧继续后面的 OCR、触发词和模型。有非空文本时原因码仍是 `qrcode`，文案仍是 `QRCODE_HIT`，不送模型，也不按链接内容放行。
+- `tests/test_forbidden_qr.py` 及图片、短视频里的对应断言随群管保留，只改包导入。
+
 ### 直接文本边界
 
 对应需求 2.3–2.7、3.3、3.10、11.1–11.6。
@@ -103,7 +112,7 @@ rules 不得为了判断入群继续依赖 welcome 的 `welcome_send.py`；也�
 
 rules 保留 `forbidden_forward.py` 及其 `call_result` 依赖。为保留现有联系人卡片拦截之前的审核展开顺序，priority 10 普通消息入口先运行一次 `resolve_audit_text`，把结果放在事件extra私有键 `group_manager.audit_text`；priority 6只读该结果，不再次查询转发。该键仅群管自己使用，其他插件不消费；事件结束即丢弃，不全局保存正文。
 
-rules 的斜杠跳过判断继续依据审核文本；welcome/keyword 依据各自规范化直接文本。审核判断、OCR、视频、卡片业务本身不改。
+rules 的斜杠跳过判断继续依据审核文本；welcome/keyword 依据各自规范化直接文本。审核判断、OCR、视频抽帧顺序和卡片业务不改。二维码是否违禁只按上一节的解析文本口径，不按旧的有框即命中搬迁。
 
 ### 消息、通知与收尾优先级
 
