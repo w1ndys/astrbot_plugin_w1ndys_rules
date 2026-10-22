@@ -6,7 +6,12 @@ class InviteEdge:
     """一条入群邀请关系：user_id 是本群成员，inviter_id 是把他拉进来的人。"""
 
     def __init__(
-        self, group_id: str, user_id: str, inviter_id: str, sub_type: str
+        self,
+        group_id: str,
+        user_id: str,
+        inviter_id: str,
+        sub_type: str,
+        created_at: str = "",
     ) -> None:
         # 群号决定这条边属于哪棵树，同一个人的邀请关系按群分开记。
         self.group_id = group_id
@@ -16,3 +21,5 @@ class InviteEdge:
         self.inviter_id = inviter_id
         # OneBot 的 sub_type：invite 是被人拉进来，approve 是审批通过。
         self.sub_type = sub_type
+        # 这条边最后一次写入的时间。旧调用不传就留空，页面按空串显示。
+        self.created_at = created_at

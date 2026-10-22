@@ -69,6 +69,52 @@ class InviteStore:
             conn.close()
         return [str(row[0]) for row in rows]
 
+    def list_edges(self, group_id: str) -> list[InviteEdge]:
+        """取本群全部邀请边。WebUI 建整棵树时一次读进内存。"""
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT group_id, user_id, inviter_id, sub_type, created_at "
+                "FROM invite_edge WHERE group_id = ? ORDER BY user_id",
+                (group_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [_edge_from_row(row) for row in rows]
+
+    def list_groups_of_user(self, user_id: str) -> list[str]:
+        """列出这个 QQ 作为成员或邀请人出现过的群，按群号排序。"""
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT group_id FROM invite_edge "
+                "WHERE user_id = ? OR inviter_id = ? ORDER BY group_id",
+                (user_id, user_id),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [str(row[0]) for row in rows]
+
+    def list_page(
+        self, group_id: str, user_id: str, offset: int, limit: int
+    ) -> tuple[list[InviteEdge], int]:
+        """全部邀请记录分页。群号和 QQ 都为空就不加过滤。"""
+        where, params = _filter_clause(group_id, user_id)
+        conn = connect(self.db_path)
+        try:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM invite_edge" + where, params
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT group_id, user_id, inviter_id, sub_type, created_at "
+                "FROM invite_edge" + where + " ORDER BY created_at DESC, user_id "
+                "LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [_edge_from_row(row) for row in rows], int(total)
+
     async def record(
         self, group_id: str, user_id: str, inviter_id: str, sub_type: str
     ) -> None:
@@ -98,3 +144,26 @@ class InviteStore:
             conn.commit()
         finally:
             conn.close()
+
+
+def _edge_from_row(row: tuple) -> InviteEdge:
+    """把 SELECT 的一行还原成邀请边。列顺序和上面的 SELECT 一致。"""
+    return InviteEdge(str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]))
+
+
+def _filter_clause(group_id: str, user_id: str) -> tuple[str, list]:
+    """拼出可选的过滤条件。值全部走 SQL 参数，不拼进语句。"""
+    clauses = []
+    params = []
+    # 群号为空表示看全部群
+    if group_id:
+        clauses.append("group_id = ?")
+        params.append(group_id)
+    # QQ 号在邀请人和被邀请人两侧都算匹配
+    if user_id:
+        clauses.append("(user_id = ? OR inviter_id = ?)")
+        params.extend([user_id, user_id])
+    # 没有过滤条件时语句不带 WHERE
+    if not clauses:
+        return "", []
+    return " WHERE " + " AND ".join(clauses), params

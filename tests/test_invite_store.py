@@ -63,3 +63,28 @@ class InviteStoreTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.store.list_direct_downline("123", "10001"), ["10003"])
         self.assertEqual(self.store.list_direct_downline("123", "20000"), [])
+
+    async def test_list_edges_has_created_at(self) -> None:
+        await self.store.record("123", "10001", "10086", "invite")
+        await self.store.record("999", "10002", "10086", "invite")
+        edges = self.store.list_edges("123")
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0].user_id, "10001")
+        self.assertTrue(edges[0].created_at)
+
+    async def test_list_groups_of_user_matches_both_sides(self) -> None:
+        await self.store.record("111", "10001", "10086", "invite")
+        await self.store.record("222", "10002", "10001", "invite")
+        await self.store.record("333", "10003", "20000", "invite")
+        self.assertEqual(self.store.list_groups_of_user("10001"), ["111", "222"])
+
+    async def test_list_page_filters_and_pages(self) -> None:
+        for i in range(3):
+            await self.store.record("123", str(30000 + i), "10086", "invite")
+        await self.store.record("999", "40000", "10086", "invite")
+        items, total = self.store.list_page("123", "", 0, 2)
+        self.assertEqual(total, 3)
+        self.assertEqual(len(items), 2)
+        items, total = self.store.list_page("", "10086", 0, 100)
+        self.assertEqual(total, 4)
+        self.assertEqual(len(items), 4)

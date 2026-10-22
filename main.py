@@ -68,6 +68,7 @@ from .business.group_name_page import (
 )
 from .business.invite_query import show_downline, show_upline
 from .business.invite_record import record_join
+from .business.invite_tree import list_edges_page, search_trees
 from .business.keyword_page import list_keywords, remove_keyword, save_keyword
 from .business.keyword_reply import pick_reply
 from .business.settings_page import get_settings, save_settings
@@ -154,6 +155,7 @@ class RulesPlugin(Star):
         self._register_log_pages()
         self._register_settings_pages()
         self._register_group_name_pages()
+        self._register_invite_pages()
         logger.info("[群管] 群规业务库已载入内存：%s", db_path)
 
     def _start_remind_loop(self) -> None:
@@ -849,6 +851,48 @@ class RulesPlugin(Star):
             return False, "拉取群列表失败。"
         return True, pull_group_names(raw)
 
+    def _register_invite_pages(self) -> None:
+        """注册邀请树查询接口。旧 AstrBot 没有这套 API 就跳过。"""
+        register = getattr(self.context, "register_web_api", None)
+        # 没这个方法说明当前 AstrBot 还不支持插件 Pages
+        if not callable(register):
+            return
+        register(
+            f"/{PLUGIN_NAME}/invite/tree",
+            self.page_invite_tree,
+            ["POST"],
+            "按 QQ 号查邀请树",
+        )
+        register(
+            f"/{PLUGIN_NAME}/invite/list",
+            self.page_invite_list,
+            ["POST"],
+            "全部邀请记录",
+        )
+
+    async def page_invite_tree(self):
+        """WebUI：输入 QQ 号，跨群返回他所在的邀请树。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出 QQ 号
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        ok, result = search_trees(self.invite, payload.get("user_id"))
+        # 号码不合法用 400，页面直接展示原因
+        if not ok:
+            return error_response(str(result), status_code=400)
+        return json_response(result)
+
+    async def page_invite_list(self):
+        """WebUI：全部邀请记录分页。"""
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        # 不是对象就取不出过滤条件
+        if not isinstance(payload, dict):
+            return error_response("请求体必须是 JSON 对象", status_code=400)
+        return json_response(list_edges_page(self.invite, payload))
 
     async def _using_provider(self):
         """取当前对话提供商。测试页没有群会话，不传 umo。"""

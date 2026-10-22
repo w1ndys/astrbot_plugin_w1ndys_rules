@@ -43,6 +43,10 @@ CMD_WELCOME_SHOW = "欢迎语"
 INVITE_UPLINE_LIMIT = 20
 # 整条下线一次最多列出多少人。超出的只报数量，不刷屏。
 INVITE_DOWNLINE_LIMIT = 30
+# WebUI 邀请树一次最多画多少个节点。超过只画前这些，页面提示截断。
+INVITE_TREE_NODE_LIMIT = 300
+# WebUI 全部邀请记录表默认每页条数。
+INVITE_PAGE_SIZE = 20
 
 # 欢迎语文案长度上限。够写一段入群说明，避免误贴整篇文章。
 WELCOME_MAX_LEN = 500
