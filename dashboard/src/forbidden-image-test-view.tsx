@@ -239,7 +239,7 @@ export function ForbiddenImageTestView() {
   const canTest = Boolean(dataUrl) && !loading;
 
   return (
-    <Card title="图片检测测试">
+    <Card title="图片检测测试" variant="borderless">
       <p className="hint">
         结果来自三级本地解码（微信、zxing、QReader）和 RapidOCR。不会撤回、禁言、发飞书，也不写违禁日志。旧「违禁测试」页的二维码开关在本页不解码，本页的结论只认这张图。
       </p>

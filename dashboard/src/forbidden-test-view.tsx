@@ -73,7 +73,7 @@ export function ForbiddenTestView() {
   }
 
   return (
-    <Card title="违禁词测试">
+    <Card title="违禁词测试" variant="borderless">
       <p className="hint">
         文本路要先命中触发词。图片转写有可见文字就送模型，不走触发词。二维码试跑只认解码层检出。不会撤回、禁言或发飞书。
       </p>

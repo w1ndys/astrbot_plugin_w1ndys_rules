@@ -148,7 +148,7 @@ export function KeywordsView() {
   ];
 
   return (
-    <Card title="关键词回复">
+    <Card title="关键词回复" variant="borderless">
       <p className="hint">
         一张表管全部群。开启仍看全局配置里该群是否勾选关键词。群里不再认自然语言增删改查，也不认「关键词 批量」。
       </p>

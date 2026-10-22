@@ -210,7 +210,7 @@ export function InviteView() {
 
   return (
     <>
-      <Card title="按 QQ 号查邀请树" style={{ marginBottom: 16 }}>
+      <Card title="按 QQ 号查邀请树" style={{ marginBottom: 16 }} variant="borderless">
         <p className="hint">
           输入 QQ 号后回车或点查询。会跨群找他出现过的每一棵树，从最顶层邀请人往下展开；树太大时只显示前一部分。
         </p>
@@ -248,7 +248,7 @@ export function InviteView() {
           </Card>
         ))}
       </Card>
-      <Card title="全部邀请记录">
+      <Card title="全部邀请记录" variant="borderless">
         <p className="hint">
           按群号或 QQ 号过滤，QQ 号匹配被邀请人和邀请人两侧。退群不删记录，再进会覆盖成最新邀请人。
         </p>

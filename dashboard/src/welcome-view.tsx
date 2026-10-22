@@ -150,7 +150,7 @@ export function WelcomeView() {
   ];
 
   return (
-    <Card title="入群欢迎语">
+    <Card title="入群欢迎语" variant="borderless">
       <p className="hint">
         每群一条独立文案。保存空文案则本群关闭，优先于全局配置里的开启勾选。删除一行则改回继承全局默认。群里「欢迎语 设置」仍可用。
       </p>

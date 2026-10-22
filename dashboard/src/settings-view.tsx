@@ -440,7 +440,7 @@ export function SettingsView() {
   );
 
   return (
-    <Card title="全局配置" loading={loading}>
+    <Card title="全局配置" loading={loading} variant="borderless">
       <GroupTable
         rows={rows}
         setRows={setRows}

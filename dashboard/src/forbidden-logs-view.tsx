@@ -287,7 +287,7 @@ export function ForbiddenLogsView() {
 
   return (
     <div>
-      <Card title="违禁日志">
+      <Card title="违禁日志" variant="borderless">
         <p className="hint">命中后才记。列表不看原文，点开一条才加载文本、卡片和图。群名读群名映射，群昵称是命中时存下来的，旧日志可以用「回补群昵称」按当前群成员资料补一次。本群名单只对该群生效，全局名单对所有群生效，拉黑不踢人。飞书 webhook 不在这页。</p>
         <Space wrap style={{ marginBottom: 16 }}>
           <Input style={{ width: 160 }} placeholder="群号" value={groupId} onChange={(event) => setGroupId(event.target.value)} />
