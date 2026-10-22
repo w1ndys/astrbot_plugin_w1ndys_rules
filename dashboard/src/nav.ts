@@ -10,6 +10,7 @@ export const PAGE_TABS: PageTab[] = [
   { key: "settings", label: "全局配置" },
   { key: "welcome", label: "欢迎语" },
   { key: "keywords", label: "关键词" },
+  { key: "invite", label: "邀请树" },
   { key: "forbidden-triggers", label: "违禁触发词" },
   { key: "forbidden-test", label: "违禁测试" },
   { key: "forbidden-image-test", label: "图片检测测试" },

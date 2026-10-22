@@ -38,6 +38,12 @@ body.is-dark {
   justify-content: flex-end;
 }
 
+/* 邀请树节点里的入群方式和时间，跟在 QQ 号后面，不抢主信息。 */
+.invite-meta {
+  margin-left: 8px;
+  opacity: 0.72;
+}
+
 .result {
   margin: 0;
   white-space: pre-wrap;

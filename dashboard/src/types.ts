@@ -188,3 +188,44 @@ export interface SettingsPayload extends FeatureLists {
   forbidden_trigger_phone: boolean;
   forbidden_trigger_wechat: boolean;
 }
+
+// 邀请树的一个节点：被邀请人、入群信息和直接下线。
+export interface InviteTreeNode {
+  user_id: string;
+  inviter_id: string;
+  sub_type: string;
+  created_at: string;
+  is_target: boolean;
+  children: InviteTreeNode[];
+}
+
+// invite/tree 返回的一个群：树的根和节点。truncated 表示节点到上限被截断。
+export interface InviteGroupTree {
+  group_id: string;
+  root_id: string;
+  nodes: InviteTreeNode[];
+  truncated: boolean;
+}
+
+// invite/tree 的返回：搜的 QQ 和他在每个群的树。
+export interface InviteTreeResponse {
+  user_id: string;
+  groups: InviteGroupTree[];
+}
+
+// 全部邀请记录的一行。
+export interface InviteEdgeRow {
+  group_id: string;
+  user_id: string;
+  inviter_id: string;
+  sub_type: string;
+  created_at: string;
+}
+
+// invite/list 的分页返回。
+export interface InviteEdgeListResponse {
+  items: InviteEdgeRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}

@@ -1,4 +1,4 @@
-// 页面层：插件页外壳。七块业务放进页内 Tab，切换只改 React state，不动顶层 hash。
+// 页面层：插件页外壳。八块业务放进页内 Tab，切换只改 React state，不动顶层 hash。
 
 import { useEffect, useMemo, useState } from "react";
 import { App as AntdApp, ConfigProvider, Tabs, theme } from "antd";
@@ -6,6 +6,7 @@ import { PAGE_TABS } from "./nav";
 import { SettingsView } from "./settings-view";
 import { WelcomeView } from "./welcome-view";
 import { KeywordsView } from "./keywords-view";
+import { InviteView } from "./invite-view";
 import { ForbiddenTriggersView } from "./forbidden-triggers-view";
 import { ForbiddenTestView } from "./forbidden-test-view";
 import { ForbiddenImageTestView } from "./forbidden-image-test-view";
@@ -43,6 +44,8 @@ export default function App() {
       children = <WelcomeView />;
     } else if (tab.key === "keywords") {
       children = <KeywordsView />;
+    } else if (tab.key === "invite") {
+      children = <InviteView />;
     } else if (tab.key === "forbidden-triggers") {
       children = <ForbiddenTriggersView />;
     } else if (tab.key === "forbidden-test") {
