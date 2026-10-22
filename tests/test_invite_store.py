@@ -32,10 +32,14 @@ class InviteStoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edge.inviter_id, "10086")
         self.assertEqual(edge.sub_type, "invite")
 
-    async def test_sub_type_persisted(self) -> None:
+    async def test_migrate_drops_approved_edges(self) -> None:
         await self.store.record("123", "10001", "10086", "approve")
-        edge = self.store.get_edge("123", "10001")
-        self.assertEqual(edge.sub_type, "approve")
+        await self.store.record("123", "10002", "10086", "invite")
+        # 重新打开会触发迁移，审批入群的旧边被删掉
+        reopened = InviteStore(self.db_path)
+        self.assertEqual(reopened.dropped_approved, 1)
+        self.assertIsNone(reopened.get_edge("123", "10001"))
+        self.assertIsNotNone(reopened.get_edge("123", "10002"))
 
     async def test_groups_are_isolated(self) -> None:
         await self.store.record("111", "10001", "20001", "invite")

@@ -30,12 +30,26 @@ class InviteStore:
         self._lock = asyncio.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._setup()
+        # 历史版本把审批入群记成邀请边，升级后清掉；重复执行没有副作用。
+        self.dropped_approved = self.migrate_drop_approved()
 
     def _setup(self) -> None:
         """首次启动时建表。已存在就跳过。"""
         conn = connect(self.db_path)
         try:
             create_table(conn, CREATE_TABLE_SQL)
+        finally:
+            conn.close()
+
+    def migrate_drop_approved(self) -> int:
+        """删掉历史里审批入群的边。审批人是管理员，不是真实邀请人。"""
+        conn = connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                "DELETE FROM invite_edge WHERE sub_type = 'approve'"
+            )
+            conn.commit()
+            return cursor.rowcount
         finally:
             conn.close()
 

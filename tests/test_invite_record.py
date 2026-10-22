@@ -1,4 +1,4 @@
-# 入群写邀请边：WebUI 名单要开，邀请人要能读到，拿不到或自己邀自己不写。
+# 入群写邀请边：WebUI 名单要开，邀请人要能读到，审批入群、拿不到或自己邀自己不写。
 
 import sys
 import tempfile
@@ -71,7 +71,7 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edge.inviter_id, "10086")
         self.assertEqual(edge.sub_type, "invite")
 
-    async def test_approve_records_operator(self) -> None:
+    async def test_approve_is_skipped(self) -> None:
         event = FakeEvent(
             {
                 "notice_type": "group_increase",
@@ -79,12 +79,12 @@ class InviteRecordTest(unittest.IsolatedAsyncioTestCase):
                 "operator_id": "10086",
             }
         )
-        await record_join(
+        recorded = await record_join(
             self.store, self.on, event, self.group_id, "10001", "999"
         )
-        self.assertEqual(
-            self.store.get_edge(self.group_id, "10001").sub_type, "approve"
-        )
+        # 审批入群的 operator 是管理员，不是邀请人，不入树
+        self.assertFalse(recorded)
+        self.assertIsNone(self.store.get_edge(self.group_id, "10001"))
 
     async def test_rejoin_overwrites_inviter(self) -> None:
         first = FakeEvent(

@@ -133,6 +133,11 @@ class RulesPlugin(Star):
         self.forbidden_logs = ForbiddenLogStore(db_path)
         self.verify = VerifyStore(db_path)
         self.invite = InviteStore(db_path)
+        # 升级后第一次启动会清掉旧的审批入群记录，有删除才提示
+        if self.invite.dropped_approved:
+            logger.info(
+                "[群管] 清掉 %s 条审批入群邀请记录", self.invite.dropped_approved
+            )
         self.blacklist = BlacklistStore(db_path)
         self.whitelist = WhitelistStore(db_path)
         self.welcome = WelcomeStore(db_path)

@@ -1,8 +1,8 @@
 # 业务层：群成员增加时，把这条邀请边写进库。
 #
 # 每群一份 WebUI 名单，空名单即关，避免刚装插件就开始攒数据。
-# approve（进群申请被管理员同意）拿不到真实邀请人，按用户决定记成审批管理员，
-# 也就是 operator_id。拿不到 operator_id 或自己邀请自己时不记，宁可不写也不造假边。
+# 只记 invite（被成员拉进来）。approve 的 operator 是审批管理员或群主，不是真实
+# 邀请人，不入树；拿不到 operator_id 或自己邀请自己时也不记，宁可不写也不造假边。
 # 不判断名单以外的事，不发消息，不碰 AstrBot。
 
 try:
@@ -39,6 +39,10 @@ async def record_join(
     # 普通群消息、退群这些没有通知原始体
     if raw is None:
         return False
+    sub_type = _field(raw, "sub_type")
+    # 只记邀请入群；审批入群的 operator 是管理员，不是邀请人
+    if sub_type != "invite":
+        return False
     inviter = _field(raw, "operator_id")
     # 系统拉群、扫码进群等拿不到邀请人，不断定关系
     if not inviter or inviter == "0":
@@ -46,7 +50,7 @@ async def record_join(
     # 自己邀请自己（例如扫码）不算邀请边
     if inviter == user_id:
         return False
-    await store.record(group_id, user_id, inviter, _field(raw, "sub_type"))
+    await store.record(group_id, user_id, inviter, sub_type)
     _log.debug("[群管] 邀请记录 群号=%s 发言人=%s 邀请人=%s", group_id, user_id, inviter)
     return True
 
