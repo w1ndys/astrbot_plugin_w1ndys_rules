@@ -13,14 +13,15 @@
     - 验收：两个新包的目录可识别，`ruff check .` 通过；原仓库源码仍保持原状。关联设计属性 2、6，需求 1.3–1.4、2.1、3.1。
     - 验证记录：子代理实现后主代理在独立Python 3.12.14隔离环境复跑，两仓各4个unittest通过、ruff 0.17.0全仓通过，五个视觉库均absent，pyproject与原仓cmp一致；每仓13文件，未创建main.py/metadata/schema/数据库/前端。除已授权README基线外代码未提交、未push。
 
-- [ ] 2. 建立关键词插件的实体、配置与存储
+- [x] 2. 建立关键词插件的实体、配置与存储
   - 依赖：任务 1。依据：需求 1.2–1.4、5.1、5.6、6.1–6.2、10.1、10.7；设计：配置分片、Data Models。
   - 在 keyword 复制并裁剪 `entity/constants.py`，复制 `entity/keyword.py`、`entity/group_name.py`；后者是 `GroupNameStore` 的实际依赖，不能只复制 store。
   - 复制 `data/db.py`、`keyword_store.py`、`group_name_store.py`、`setting_store.py`，保持字段、主键、规则快照行为。新增 `save_with_group_names` 单连接事务保存配置和群名，失败整份回滚；`plugin_setting` 仅管理 `keyword_groups`，名单仍为字符串数组。
   - `_conf_schema.json` 仅保留关键词群名单，沿用默认空名单和 invisible。数据库文件名固定为 `keyword_reply.db`。
-  - [ ] 2.1 验证关键词存储和配置分片
+  - [x] 2.1 验证关键词存储和配置分片
     - 搬运对应存储覆盖，补空库初始化、规则读写、快照更新、群名 upsert、配置重启回读；验证配置恰好 1 键、表名与主键不变。
     - 验收：在 keyword 执行 `cd tests && ../.venv/bin/python -m unittest` 与 `ruff check .`，退出码均为 0。关联需求 5.1、6.2、10.1。
+    - 验证记录：子代理实现后主代理复跑，35 个 unittest 通过、ruff 通过；主代理把 `save_with_group_names` 的快照读回放进同一把写锁。未提交、未 push。
 
 - [ ] 3. 搬迁关键词业务并接入按插件隔离的群名业务
   - 依赖：任务 2。依据：需求 2.3–2.8、10.3–10.9、11.1–11.5；设计：模块搬迁映射、直接文本边界、设置与群名接口。
